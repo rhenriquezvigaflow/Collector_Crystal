@@ -58,10 +58,7 @@ Mejoras de seguridad y roadmap
 ------------------------------
 - Añadir autenticación/autoridad a la API/UI (basic/JWT) y servir con TLS (reverse proxy).
 - Mover configuración sensible a variables de entorno o vault.
-- Usar OPC UA con certificados y validar servidor.
-- Backoff/circuit-breaker en reconexiones y exportar métricas (Prometheus).
-- Tests unitarios para helpers y mocks de PLC/OPC.
-- Rotación/backup y (si es necesario) cifrado de la DB.
+- Rotación/backup cifrado de la DB.
 
 Notas operativas
 ----------------
