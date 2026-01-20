@@ -1,0 +1,4 @@
+plc_ip,tags,lecturas,errores,lat_min_ms,lat_max_ms,lat_prom_ms,lat_stddev_ms
+192.168.12.10,PT121_R,110,0,52.23,57.77,54.54,1.26
+192.168.20.10,"WM01_TOT, PT117_R, PT119_R, P005_ST",84,0,235.1,243.72,237.71,1.5
+192.168.16.10,"WM01_TOT, PT117_R",93,3,0.12,126.08,59.2,61.28
