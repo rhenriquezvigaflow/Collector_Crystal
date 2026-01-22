@@ -631,14 +631,6 @@ influxdb_writer.write_batch([payload])
 
 ---
 
-## 14. Referencias y Enlaces
-
-- **Documentation pylogix:** [Rockwell Allen-Bradley]
-- **Documentación snap7:** [Siemens S7]
-- **Python YAML:** [pyyaml.org]
-- **Flask:** [flask.palletsprojects.com]
-
----
 
 ## 15. Glosario de Términos
 
@@ -655,15 +647,3 @@ influxdb_writer.write_batch([payload])
 
 ---
 
-## 16. Historial de Cambios
-
-| Versión | Fecha | Cambios |
-|---------|-------|---------|
-| 1.0 | 2026-01-22 | Documentación inicial |
-
----
-
-**Documento:** Documentación Técnica - Collector Python  
-**Versión:** 1.0  
-**Fecha:** 22 de Enero de 2026  
-**Autor:** Sistema de Documentación Automática
