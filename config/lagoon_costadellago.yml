@@ -1,0 +1,13 @@
+plant_id: 001
+source: rockwell
+poll_seconds: 1
+
+rockwell:
+  ip: "192.168.11.10"
+  slot: 0
+
+tags:
+  d0: "PT117_R_SCADA"
+  d1: "PT141_R_SCADA"
+  d2: "PT143_R_SCADA"
+  d3: "PT148_R_SCADA"
