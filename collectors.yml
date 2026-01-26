@@ -1,0 +1,7 @@
+backend:
+  url: "http://localhost:8000/ingest/scada"
+
+plcs:
+  - include: "config/lagoon_aquavista.yml"
+  - include: "config/lagoon_costadellago.yml"
+  - include: "config/Ava_lagoons.yml"

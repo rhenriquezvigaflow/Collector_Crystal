@@ -1,4 +1,4 @@
-lagoon_id: "costa_del_lago"
+lagoon_id: "ava_lagoons"
 source: rockwell
 poll_seconds: 1
 
@@ -7,7 +7,7 @@ backend:
   url: "http://localhost:8000/ingest/scada"
 
 rockwell:
-  ip: "192.168.11.10"
+  ip: "192.168.16.10"
   slot: 0
 
 tags:

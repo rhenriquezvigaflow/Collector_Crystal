@@ -1,9 +1,21 @@
 from pydantic import BaseModel
-from typing import Dict, Any, Literal
 from datetime import datetime
+from typing import Any, Optional, List
+
+
+class ScadaEvent(BaseModel):
+    type: str                 
+    lagoon_id: str
+    tag_id: str
+    tag_label: Optional[str] = None
+    ts: datetime
+
 
 class NormalizedPayload(BaseModel):
-    plant_id: int
-    source: Literal["rockwell", "siemens"]
-    timestamp: datetime      # UTC
-    tags: Dict[str, Any]
+    lagoon_id: str          
+    source: str
+    timestamp: datetime
+    tags: dict[str, Any]
+
+  
+    events: Optional[List[ScadaEvent]] = None
