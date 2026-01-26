@@ -2,15 +2,18 @@
 
 Sistema de recopilación de datos industriales en tiempo real desde controladores PLC (Rockwell y Siemens) con almacenamiento local y reconexión automática.
 
+**Proyecto:** Crystal Lagoons | **Versión:** 1.0 | **Estado:** Producción ✅
+
 ## 📋 Características
 
 ✅ Lectura en tiempo real de tags/variables desde PLCs  
-✅ Soporte para Rockwell (Allen-Bradley) y Siemens (S7)  
+✅ Soporte para **Rockwell** (EthernetIP) y **Siemens** (OPC-UA)  
 ✅ Almacenamiento en múltiples formatos (JSONL, PostgreSQL, SQLite)  
-✅ Reconexión automática ante fallos  
-✅ Logging centralizado con rotación  
-✅ Configuración flexible por YAML  
-✅ Tolerancia a fallos y recuperación  
+✅ Reconexión automática y rotación forzada de conexión  
+✅ Logging centralizado con archivo + consola  
+✅ Configuración flexible basada en YAML  
+✅ Tolerancia a fallos y recuperación ante desconexiones  
+✅ Envío opcional a backend centralizado (HTTP POST)  
 
 ## 🚀 Inicio Rápido
 
@@ -32,116 +35,302 @@ pip install -r requirements.txt
 
 ### 3. Configuración
 
-Editar el archivo de configuración para tu planta:
+Editar el archivo de configuración para tu laguna/planta:
 
-**`config/lagoon_aguavista.yml`** (ejemplo):
+**`config/lagoon_costadellago.yml`** (ejemplo - Siemens):
 ```yaml
-plant_id: 1
-source: "rockwell"
+lagoon_id: "b723d4a9-2f2f-474b-b87f-0dfce68c18e8"
+source: "siemens"
 poll_seconds: 1.0
+
 force_reconnect_every_sec: 3600
 max_consecutive_fails: 10
+
+backend:
+  url: "http://localhost:8000/ingest/scada"
+
+siemens:
+  opc_server_url: "opc.tcp://192.168.17.10:4840"
+  timeout_sec: 4
+
+tags:
+  tag_temperature: "ns=4;i=3"
+  tag_pressure: "ns=4;i=4"
+  tag_flow: "ns=4;i=5"
+```
+
+### 4. Ejecutar
+
+**Windows (Script Batch):**
+```bash (Rockwell):**
+```bash
+python main.py --config config/lagoon_aquavista.yml
+```
+
+**Línea de Comandos (Siemens):**
+```bash
+python main.py --config config/lagoon_costadellago.yml
+**Python (Programáticamente):**
+```python
+from main import main
+main("config/lag del Proyecto
+
+```
+collector_python/
+├── main.py                      # Punto de entrada (CLI)
+├── requirements.txt             # Dependencias Python
+├── run.bat                      # Script para Windows
+├── README.md                    # Este archivo (guía rápida)
+├── ARQUITECTURA.md              # Documentación de arquitectura
+├── DOCUMENTACION_TECNICA.md     # Documentación técnica detallada
+│
+├── common/                      # Módulos compartidos
+│   ├── __init__.py
+│   ├── payload.py               # Estructura NormalizedPayload
+│   ├── sender.py                # BackendSender (HTTP)
+│   ├── logger.py                # Sistema de logging
+│   └── time.py                  # Utilidades de tiempo (UTC)
+│
+├── config/                      # Archivos de configuración YAML
+│   ├── lagoon_aquavista.yml     # Config Rockwell (ejemplo)
+│   └── lagoon_costadellago.yml  # Config Siemens (ejemplo)
+│
+├── workers/                     # Lectores de datos (Workers)
+│   ├── __init__.py
+│   ├── get_rockwell.py          # RockwellSessionReader
+│   └── get_siemens.py           # Si Requerido |
+|-----------|-------------|---------|-----------|
+| `lagoon_id` | UUID único de la laguna | `"b723d4a9-..."` | ✅ |
+| `source` | Tipo de PLC | `"rockwell"` \| `"siemens"` | ✅ |
+| `poll_seconds` | Intervalo entre lecturas (segundos) | `1.0` | ✅ |
+| `force_reconnect_every_sec` | Rotar conexión cada N seg | `3600` | ❌ |
+| `max_consecutive_fails` | Fallos antes de reconectar | `10` | ❌ |
+| `backend.url` | Endpoint HTTP para envío | `"http://localhost:8000/ingest/scada"` | ❌ |
+
+### Para Rockwell (EthernetIP)
+
+```yaml
+rockwell:
+  ip: "192.168.1.100"          # IP del PLC
+  slot: 0                        # Slot del procesador (típicamente 0)
+```
+
+### Para Siemens (OPC-UA)
+
+```yaml
+siemens:
+  opc_server_url: "opc.tcp://192.168.17.10:4840"
+  timeout_sec: 4
+  username: null                 # Opcional: credenciales
+  password: null                 # Opcional
+```
+
+##lagoon_id":"b723d4a9-2f2f-474b-b87f-0dfce68c18e8","source":"siemens","timestamp":"2026-01-26T14:30:45.123456+00:00","tags":{"Tags_01_Real":23.5,"Tags_02_Real":18.2}}
+{"lagoon_id":"b723d4a9-2f2f-474b-b87f-0dfce68c18e8","source":"siemens","timestamp":"2026-01-26T14:30:46.125000+00:00","tags":{"Tags_01_Real":23.6,"Tags_02_Real":18.1}}
+```
+
+**Características:**
+- Una línea por evento (formato JSONL)
+- Timestamp en UTC con microsegundos
+- Tags con valores de lectura
+- Preserva histórico completo
+
+### Logs de Consola y Archivo
+**Archivo:** `logs/collector.log`
+
+```
+2026-01-26 14:30:44,001 | INFO | START siemens lagoon=b723d4a9-...
+2026-0Error: "connection refused" o "timeout"
+
+**Causas posibles:**
+- IP del PLC incorrecta
+- Firewall bloqueando conexión
+- Puerto cerrado en PLC
+- Servicio OPC-UA no activo (Siemens)
+
+**Soluciones:**
+```bash
+# Verificar conectividad
+ping 192.168.17.10
+
+# Para Rockwell: verificar puerto 2944 
+# Para Siemens: verificar puerto 4840 
+
+# Revisar configuración
+cat config/lagoon_costadellago.yml
+```
+
+### ❌ Error: "No tags read" o valores NULL
+
+**Causas posibles:**
+- Direcciones de tags incorrectas
+- Tags no existen en el PLC
+- Formato de dirección incorrecto
+
+**Soluciones:**
+```yaml
+# Verificar formato correcto
+# Rockwell: nombre_tag directo
+tags:
+  temperatura: "TemperatureSensor"
+
+# Siemens: namespace y node ID
+tags:
+  temperature: "ns=4;i=3"
+```
+
+### ❌ Reconexiones muy frecuentes
+
+**Causas:**
+- Fallos de red transitivos
+- `max_consecutive_fails` muy bajo
+- Problema de estabilidad del PLC
+
+**Soluciones:**
+```yaml Completa
+
+### Ejemplo 1: Rockwell (Allen-Bradley)
+
+**`config/lagoon_aquavista.yml`:**
+```yaml
+lagoon_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+source: "rockwell"
+poll_seconds: 1.0
+
+force_reconnect_every_sec: 3600
+max_consecutive_fails: 10
+
+backend:
+  url: "http://backend-server:8000/ingest/scada"
 
 rockwell:
   ip: "192.168.1.100"
   slot: 0
 
 tags:
-  tag_temperature: "TemperatureSensor"
-  tag_pressure: "PressureSensor"
-  tag_flow: "FlowMeter"
+  temperature: "TemperatureSensor"
+  pressure: "PressureSensor"
+  flow: "FlowMeter"
+  status: "SystemStatus"
 ```
 
-### 4. Ejecutar
-
-**Windows (Script Batch):**
+**Ejecutar:**
 ```bash
-run.bat
+python main.py --config config/lagoon_aquavista.yml
 ```
 
-**Línea de Comandos:**
-```bash
-python main.py config/lagoon_aguavista.yml
-```
+### Ejemplo 2: Siemens 
 
-**Python (Programáticamente):**
-```python
-from main import main
-main("config/lagoon_aguavista.yml")
-```
-
-## 📁 Estructura
-
-```
-collector_python/
-├── main.py                      # Punto de entrada
-├── requirements.txt             # Dependencias
-├── run.bat                      # Script Windows
-├── README.md                    # Este archivo
-├── DOCUMENTACION_TECNICA.md    # Documentación detallada
-├── common/                      # Módulos compartidos
-├── config/                      # Configuraciones
-├── workers/                     # Lectores (Rockwell, Siemens)
-├── storage/                     # Almacenamiento
-├── data/                        # Datos (buffer.jsonl)
-└── logs/                        # Logs de la aplicación
-```
-
-## ⚙️ Configuración
-
-### Parámetros Principales
-
-| Parámetro | Descripción | Ejemplo |
-|-----------|-------------|---------|
-| `plant_id` | ID único de la planta | `1` |
-| `source` | Tipo de PLC | `rockwell` o `siemens` |
-| `poll_seconds` | Intervalo de lectura | `1.0` |
-| `force_reconnect_every_sec` | Reconexión cada N segundos | `3600` |
-| `max_consecutive_fails` | Fallos antes de reconectar | `10` |
-| `rockwell.ip` | IP del PLC | `192.168.1.100` |
-| `rockwell.slot` | Slot del procesador | `0` |
-
-### Configurar Tags
-
-Agregar tags en la sección `tags`:
-
+**`config/lagoon_costadellago.yml`:**
 ```yaml
-tags:
-  temperatura: "Temperature_PLC"
-  presion: "Pressure_PLC"
-  velocidad: "Speed_Motor"
-  estado: "System_Status"
+lagoon_id: "b723d4a9-2f2f-474b-b87f-0dfce68c18e8"
+source: "siemens"
+poll_seconds: 1.0
+
+force_reconnect_every_sec: 3600
+max_consecutive_fail en Windows
+
+```powershell
+# Ver últimas 20 líneas del log
+Get-Content logs\collector.log -Tail 20
+
+# Monitoreo en tiempo real
+Get-Content logs\collector.log -Tail 20 -Wait
+
+# Contar registros en buffer
+@(Get-Content data\buffer.jsonl).Count
+
+# Ver último registro (el más reciente)
+(Get-Content data\buffer.jsonl -Tail 1) | ConvertFrom-Json | Format-Table
 ```
 
-## 📊 Salida de Datos
+### Verificar Estado en Linux/macOS
 
-### Buffer Local (JSONL)
-**Archivo:** `data/buffer.jsonl`
+```bash
+# Ver últimas 20 líneas del log
+tail -20 logs/collector.log
 
-```json
-{"plant_id": 1, "source": "rockwell", "timestamp": "2026-01-22T14:30:45Z", "tags": {"temperatura": 25.5, "presion": 101.3}}
-{"plant_id": 1, "source": "rockwell", "timestamp": "2026-01-22T14:30:46Z", "tags": {"temperatura": 25.6, "presion": 101.4}}
+# Monitoreo en tiempo real
+tail -f logs/collector.log
+
+# Contar registros en buffer
+wc -l data/buffer.jsonl
+
+# Ver último registro
+tail -1 data/buffer.jsonl | jq .
 ```
 
-### Logs
-**Archivo:** `logs/collector.log`
+### Métricas Útiles
+
+```bash
+# Cantidad de tags capturados por ciclo (verificar logs)
+grep "OK " logs/collector.log | grep -o "tags=[0-9]*"
+
+# Tiempo promedio de ciclo
+grep "OK " logs/collector.log | grep -o "cycle=[0-9.]*ms"
+
+# De**Credenciales:** Usar variables de entorno en lugar de hardcodear
+- ✅ **Permisos:** Restringir acceso a `config/*.yml` (contienen IPs y config sensible)
+- ✅ **Red:** Firewall - permitir solo IPs autorizadas de PLCs
+- ✅ **Datos:** Backups periódicos de `data/` y `logs/`
+- ✅ **Logs:** Revisar periódicamente para detectar intentos de acceso anómalos
+- ✅ **Rotación:** Implementar rotación de archivos de log para evitar llenar disco
+
+
+
+4. ✅ Checklist de Instalación
+
+- [ ] **Python:** Verificar Python 3.8+ → `python --version`
+- [ ] **Dependencias:** `pip install -r requirements.txt`
+- [ ] **Archivo de config:** Editar `config/lagoon_*.yml` con datos reales
+- [ ] **Conectividad:** `ping 192.168.X.X` (IP del PLC)
+- [ ] **Directorios:** Crear `data/` y `logs/` (se crean automáticamente)
+- [ ] **Permisos:** Permisos de lectura en `config/` y escritura en `data/`, `logs/`
+- [ ] **Puertos:** Verificar firewall
+  - Rockwell: Puerto **2944** (EthernetIP)
+  - Siemens: Puert Comunes
+
+### 1. Monitoreo en Tiempo Real 
+```bash
+python main.py --config config/lagoon_aquavista.yml
+# Verá logs en consola y archivo logs/collector.log
 
 ```
-2026-01-22 14:30:45,123 | INFO | START plant=1 source=rockwell plc=192.168.1.100/0 poll=1.0s tags=4
-2026-01-22 14:30:45,234 | INFO | CONNECTED plc=192.168.1.100/0
-2026-01-22 14:30:45,456 | INFO | OK plant=1 ts=2026-01-22T14:30:45Z tags=4 cycle=123.4ms
+
+### 2. Lectura Siemens con Envío a Backend
+```bash
+python main.py --config config/lagoon_costadellago.yml
+# Lee datos del OPC-UA Siemens
+# Los envía a backend HTTP (si está configurado)
+# También almacena en data/buffer.jsonl como respaldo
 ```
 
-## 🔧 Solución de Problemas
+### 3. Recuperación Automática ante Fallos
+```bash
+# El sistema:
+# - Reconecta automáticamente si el PLC se desconecta
+# - Fuerza reconexión cada N segundos (configurable)
+# - Tolera fallos consecutivos antes de reconectar
+# - Sin intervención manual necesaria
+```
 
-### ❌ "Connection refused"
-**Solución:**
-- Verificar IP del PLC en configuración
-- Ejecutar: `ping 192.168.1.100`
-- Verificar firewall del equipo
 
-### ❌ "No tags read"
-**Solución:**
+### 4. Despliegue Múltiple (Multi-Laguna)
+```bash
+# Terminal 1: Laguna Aquavista (Rockwell)
+python main.py --config config/lagoon_aquavista.yml
+
+# Terminal 2: Laguna Costa del Lago (Siemens)
+python main.py --config config/lagoon_costadellago.yml
+
+# Cada instancia opera independientemente
+```
+
+### Componentes Clave
+- **Rockwell:** EthernetIP vía `pycomm3`
+- **Siemens:** OPC-UA vía `opcua`
+- **Almacenamiento:** JSONL + SQLite + PostgreSQL
+- **Integración:** HTTP POST al backend
 - Revisar nombres de tags en `config/*.yml`
 - Validar que existan en el software del PLC
 
@@ -227,14 +416,6 @@ Para información detallada sobre:
 - Extensión y desarrollo
 - Configuración avanzada
 
-Consulta: [DOCUMENTACION_TECNICA.md](DOCUMENTACION_TECNICA.md)
-
-## 🐛 Reportar Problemas
-
-Si encuentras errores o tienes sugerencias:
-1. Revisar `logs/collector.log`
-2. Consultar [DOCUMENTACION_TECNICA.md](DOCUMENTACION_TECNICA.md) sección Troubleshooting
-3. Verificar configuración en `config/*.yml`
 
 ## 📋 Checklist de Instalación
 
@@ -260,15 +441,4 @@ El sistema reinicia automáticamente ante fallos sin intervención manual.
 ### 3. Integración con Otras Herramientas
 Los datos en `data/buffer.jsonl` pueden ser procesados por otros scripts.
 
-## 📞 Soporte
-
-- Documentación técnica: [DOCUMENTACION_TECNICA.md](DOCUMENTACION_TECNICA.md)
-- Logs detallados: `logs/collector.log`
-- Datos recopilados: `data/buffer.jsonl`
-
----
-
-**Versión:** 1.0  
-**Fecha:** 22 de Enero de 2026  
-**Estado:** Producción
 
