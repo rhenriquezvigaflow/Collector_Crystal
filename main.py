@@ -20,9 +20,6 @@ from workers.get_siemens import SiemensSessionReader
 # =========================
 load_dotenv()
 
-# ==================================================
-# SILENCIAR LOGS DE LIBRERÍAS (OPC / ROCKWELL)
-# ==================================================
 
 logging.getLogger("opcua").setLevel(logging.WARNING)
 logging.getLogger("opcua.client").setLevel(logging.WARNING)

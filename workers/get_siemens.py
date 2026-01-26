@@ -31,7 +31,6 @@ class SiemensSessionReader:
 
         client = Client(self.endpoint, timeout=self.timeout_sec)
 
-        # 🔐 Auth opcional
         if self.username and self.password:
             client.set_user(self.username)
             client.set_password(self.password)
@@ -73,7 +72,7 @@ class SiemensSessionReader:
             return values
 
         except UaError:
-            # error OPC UA → reconectar en próximo ciclo
+            #  reconectar en próximo ciclo
             self.disconnect()
             return {}
 

@@ -33,7 +33,6 @@ class PLCWorker(threading.Thread):
             except Exception as e:
                 print(f"[{self.name}] PLC error: {e}")
 
-            # ⏱️ control exacto de 1s
             next_tick += self.poll_seconds
             sleep_for = next_tick - time.perf_counter()
             if sleep_for > 0:
