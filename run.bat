@@ -1,5 +1,5 @@
-@echo off
-setlocal ENABLEEXTENSIONS
+﻿@echo off
+setlocal ENABLEEXTENSIONS ENABLEDELAYEDEXPANSION
 
 REM ==========================================
 REM Crystal Lagoons - Collector SCADA
@@ -36,12 +36,31 @@ echo Usando configuracion:
 echo   %CONFIG_FILE%
 echo.
 
-REM Arranque del collector (multi-laguna)
-echo Iniciando collector...
+REM ==========================
+REM ARRANQUE DIRECTO
+REM ==========================
+echo Iniciando collector (modo directo)...
 echo.
 
 python "%BASE_DIR%main.py" --config "%CONFIG_FILE%"
+set EXIT_CODE=%ERRORLEVEL%
 
 echo.
-echo Collector detenido.
+echo Collector termino con codigo: %EXIT_CODE%
+echo.
+
+REM ==========================
+REM FALLBACK A SUPERVISOR
+REM ==========================
+if NOT "%EXIT_CODE%"=="0" (
+    echo ==========================================
+    echo Collector fallo. Iniciando SUPERVISOR...
+    echo ==========================================
+    echo.
+
+    python "%BASE_DIR%supervisor.py"
+)
+
+echo.
+echo Proceso finalizado.
 pause
