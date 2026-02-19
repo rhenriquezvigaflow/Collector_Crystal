@@ -4,7 +4,8 @@ import argparse
 import os
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict
+from typing import Dict, Any
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -15,33 +16,25 @@ from common.sender import BackendSender
 from workers.get_rockwell import RockwellSessionReader
 from workers.get_siemens import SiemensSessionReader
 
+# SOLO ESTO ES NUEVO
+from normalizer.tot_delta_normalizer import TotDeltaNormalizer
+
+
 # =========================
 # ENV
 # =========================
 load_dotenv()
 
-
 logging.getLogger("opcua").setLevel(logging.WARNING)
-logging.getLogger("opcua.client").setLevel(logging.WARNING)
-logging.getLogger("opcua.server").setLevel(logging.WARNING)
-logging.getLogger("opcua.uaprotocol").setLevel(logging.WARNING)
-
 logging.getLogger("pycomm3").setLevel(logging.WARNING)
-logging.getLogger("pycomm3.cip_driver").setLevel(logging.WARNING)
-logging.getLogger("pycomm3.logix_driver").setLevel(logging.WARNING)
-
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 
-# =========================
-# Event Detector
-# =========================
+# ==========================================================
+# BOOLEAN EVENT DETECTOR
+# ==========================================================
 
-class EventDetector:
-    """
-    Detecta cambios de estado (FALSE→TRUE / TRUE→FALSE)
-    Mantiene estado en memoria por (lagoon_id, tag_id)
-    """
+class BooleanEventDetector:
 
     def __init__(self):
         self.last_states: Dict[tuple, bool] = {}
@@ -49,48 +42,47 @@ class EventDetector:
     def process(
         self,
         lagoon_id: str,
-        tags: dict,
+        tags: Dict[str, Any],
         ts,
-        event_tags: dict,
+        event_tags: Dict[str, str],
     ) -> list[dict]:
-        """
-        event_tags:
-        {
-            "pump_running": "Pump Running",
-            "blower_status": "Blower Status"
-        }
-        """
+
         events = []
 
         for tag_id, label in event_tags.items():
             if tag_id not in tags:
                 continue
 
-            value = bool(tags[tag_id])
+            raw_value = tags[tag_id]
+            if raw_value is None:
+                continue
+
+            value = bool(raw_value)
             key = (lagoon_id, tag_id)
             prev = self.last_states.get(key)
 
-            # Primera lectura → solo memorizar
             if prev is None:
                 self.last_states[key] = value
                 continue
 
-            # FALSE → TRUE → abrir evento
             if prev is False and value is True:
                 events.append({
                     "type": "OPEN",
                     "lagoon_id": lagoon_id,
                     "tag_id": tag_id,
                     "tag_label": label,
+                    "alert_type": "BOOLEAN",
+                    "state": int(value),
                     "ts": ts.isoformat(),
                 })
 
-            # TRUE → FALSE → cerrar evento
             elif prev is True and value is False:
                 events.append({
                     "type": "CLOSE",
                     "lagoon_id": lagoon_id,
                     "tag_id": tag_id,
+                    "alert_type": "BOOLEAN",
+                    "state": int(value),
                     "ts": ts.isoformat(),
                 })
 
@@ -99,8 +91,57 @@ class EventDetector:
         return events
 
 
+# ==========================================================
+# STATE EVENT DETECTOR
+# ==========================================================
+
+class StateEventDetector:
+
+    def __init__(self):
+        self.last_states: Dict[tuple, int] = {}
+
+    def process(
+        self,
+        lagoon_id: str,
+        tags: Dict[str, Any],
+        ts,
+    ) -> list[dict]:
+
+        events = []
+
+        for tag_id, raw_value in tags.items():
+
+            if not isinstance(raw_value, int):
+                continue
+
+            if raw_value not in (0, 1, 2, 3):
+                continue
+
+            key = (lagoon_id, tag_id)
+            prev = self.last_states.get(key)
+
+            if prev is None:
+                self.last_states[key] = raw_value
+                continue
+
+            if prev != raw_value:
+                events.append({
+                    "type": "STATE_CHANGE",
+                    "lagoon_id": lagoon_id,
+                    "tag_id": tag_id,
+                    "alert_type": "STATE",
+                    "previous_state": prev,
+                    "state": raw_value,
+                    "ts": ts.isoformat(),
+                })
+
+            self.last_states[key] = raw_value
+
+        return events
+
+
 # =========================
-# Config helpers
+# CONFIG
 # =========================
 
 def load_config(path: str) -> dict:
@@ -141,18 +182,31 @@ def get_backend_sender(cfg: dict, root_cfg: dict) -> BackendSender | None:
     return None
 
 
-# =========================
-# Main PLC loop
-# =========================
+# ==========================================================
+# MAIN LOOP
+# ==========================================================
 
 def run_one_plc(cfg: dict, root_cfg: dict):
+
     lagoon_id = cfg["lagoon_id"]
     source = cfg["source"]
     poll = float(cfg.get("poll_seconds", 1))
 
+    lagoon_timezone = cfg.get("timezone")
+    if not lagoon_timezone:
+        raise ValueError(f"Timezone not specified in config for lagoon {lagoon_id}")
+
+    tz = ZoneInfo(lagoon_timezone)
+
     sender = get_backend_sender(cfg, root_cfg)
-    event_detector = EventDetector()
-    event_tags = cfg.get("event_tags", {})  # SOLO tags booleanos
+
+    boolean_detector = BooleanEventDetector()
+    state_detector = StateEventDetector()
+
+    # SOLO ESTO ES NUEVO
+    tot_normalizer = TotDeltaNormalizer()
+
+    event_tags = cfg.get("event_tags", {})
 
     if source == "rockwell":
         reader = RockwellSessionReader(
@@ -186,46 +240,74 @@ def run_one_plc(cfg: dict, root_cfg: dict):
             time.sleep(min(1.0, poll))
             continue
 
+        # =========================
+        # COPIA DEFENSIVA
+        # =========================
+        tags = dict(raw_tags)
+
+        # =========================
+        # WM001 TOT -> DELTA
+        # =========================
+        TOT_TAG = "WM01_TOT_SCADA"
+        DELTA_TAG = "WM01_TOT_DELTA_SCADA"
+
+        if TOT_TAG in tags:
+            key = f"{lagoon_id}:{TOT_TAG}"
+            delta = tot_normalizer.compute(key, tags.get(TOT_TAG))
+            tags[DELTA_TAG] = delta
+
+
+        timestamp_utc = utc_now()
+
+
         payload = NormalizedPayload(
             lagoon_id=lagoon_id,
             source=source,
-            timestamp=utc_now(),
-            tags=raw_tags,
+            timestamp=timestamp_utc,
+            tags=tags,
         )
 
-        # =========================
-        # EVENT DETECTION
-        # =========================
-        events = event_detector.process(
+
+        # BOOLEAN EVENTS
+        bool_events = boolean_detector.process(
             lagoon_id=lagoon_id,
-            tags=raw_tags,
+            tags=tags,
             ts=payload.timestamp,
             event_tags=event_tags,
         )
 
-        if events:
-            payload.events = events
-
-        # =========================
-        # SEND TO BACKEND
-        # =========================
-        if sender:
-            sender.send(payload)
-
-        elapsed = time.perf_counter() - cycle_start
-        print(
-            f"OK {source} lagoon={lagoon_id} ts={payload.timestamp.isoformat()} "
-            f"tags={len(raw_tags)} events={len(events)} "
-            f"cycle={elapsed*1000:.1f}ms"
+        # STATE EVENTS
+        state_events = state_detector.process(
+            lagoon_id=lagoon_id,
+            tags=tags,
+            ts=payload.timestamp,
         )
 
+        all_events = bool_events + state_events
+
+        if all_events:
+            payload.events = all_events
+
+        if sender:
+            sender.send(payload)
+            elapsed = time.perf_counter() - cycle_start
+
+            print(
+                f"OK {source} lagoon={lagoon_id} "
+                f"utc={timestamp_utc.isoformat()} "
+                f"tags={len(tags)} "
+                f"events={len(all_events)} "
+                f"cycle={elapsed*1000:.1f}ms"
+            )
+
+        elapsed = time.perf_counter() - cycle_start
         sleep_for = poll - elapsed
         if sleep_for > 0:
             time.sleep(sleep_for)
 
 
 # =========================
-# Entrypoint
+# ENTRYPOINT
 # =========================
 
 def main(config_path: str):
@@ -236,12 +318,17 @@ def main(config_path: str):
         return
 
     print(f"MASTER: starting {len(plc_configs)} PLCs")
-    with ThreadPoolExecutor(max_workers=len(plc_configs)) as ex:
-        for cfg in plc_configs:
-            ex.submit(run_one_plc, cfg, root_cfg)
 
-        while True:
-            time.sleep(60)
+    with ThreadPoolExecutor(max_workers=len(plc_configs)) as ex:
+        futures = []
+        for cfg in plc_configs:
+            futures.append(ex.submit(run_one_plc, cfg, root_cfg))
+
+        for f in futures:
+            try:
+                f.result()
+            except Exception as e:
+                print("[THREAD ERROR]", e)
 
 
 if __name__ == "__main__":

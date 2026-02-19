@@ -2,6 +2,8 @@ lagoon_id: "costa_del_lago"
 source: rockwell
 poll_seconds: 1
 
+timezone: "America/Asuncion" 
+
 
 backend:
   url: "http://localhost:8000/ingest/scada"
@@ -14,9 +16,12 @@ tags:
   PT117_R_SCADA: "PT117_R_SCADA"
   PT148_R_SCADA: "PT148_R_SCADA"
   PT141_R_SCADA: "PT141_R_SCADA"
-  PT145_R_SCADA: "PT145_R_SCADA"
   PT143_R_SCADA: "PT143_R_SCADA"
-  P002_ST_SCADA: "P002_ST_SCADA"
-  P006_ST_SCADA: "P006_ST_SCADA"
-  P007_ST_SCADA: "P007_ST_SCADA"
+  PT145_R_SCADA: "PT145_R_SCADA"
+  WM01_TOT_SCADA: "WM01_TOT_SCADA"
+  DIF_PRES_SCADA: "DIF_PRES_SCADA"
+  P002_STS_SCADA: "P002_STS_SCADA"
+  P006_STS_SCADA: "P006_STS_SCADA"
+  P007_STS_SCADA: "P007_STS_SCADA"
   RETRO_SCADA: "RETRO_SCADA"
+

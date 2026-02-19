@@ -1,6 +1,11 @@
 from pycomm3 import LogixDriver
 from pycomm3.exceptions import CommError
 import time
+import logging
+from typing import Any
+
+
+logger = logging.getLogger("rockwell_reader")
 
 
 class RockwellSessionReader:
@@ -12,6 +17,7 @@ class RockwellSessionReader:
         force_reconnect_every_sec: int = 3600,
         max_consecutive_fails: int = 10,
         timeout_sec: float = 5.0,
+        debug_types: bool = False,  
     ):
         self.ip = ip
         self.slot = slot
@@ -19,6 +25,7 @@ class RockwellSessionReader:
         self.force_reconnect_every_sec = force_reconnect_every_sec
         self.max_consecutive_fails = max_consecutive_fails
         self.timeout_sec = timeout_sec
+        self.debug_types = debug_types
 
         self._last_connect_ts: float = 0.0
         self._consecutive_fails: int = 0
@@ -45,6 +52,8 @@ class RockwellSessionReader:
         self._last_connect_ts = time.time()
         self._consecutive_fails = 0
 
+        logger.info(f"Connected to Rockwell PLC {self.ip}")
+
     def _disconnect(self):
         if self._driver:
             try:
@@ -63,11 +72,11 @@ class RockwellSessionReader:
     # READ (BATCH)
     # =========================
 
-    def read_once(self) -> dict:
+    def read_once(self) -> dict[str, Any]:
         if self._should_rotate():
             self._connect()
 
-        values: dict = {}
+        values: dict[str, Any] = {}
 
         try:
             results = self._driver.read(*self._plc_tags)
@@ -76,27 +85,35 @@ class RockwellSessionReader:
                 if res is None:
                     continue
 
-                # mapear PLC tag → logical tag_id
                 logical_tag = self._find_logical_tag(res.tag)
 
                 if res.error:
                     values[logical_tag] = None
-                else:
-                    values[logical_tag] = res.value
+                    continue
+
+                raw_value = res.value
+                value = self._normalize_value(raw_value)
+
+                values[logical_tag] = value
+                if self.debug_types:
+                    logger.warning(
+                        f"PLC READ tag={logical_tag} "
+                        f"value={value} type={type(value).__name__}"
+                    )
 
             self._consecutive_fails = 0
             return values
 
-        except CommError:
-            # error de comunicación (timeout, socket, etc.)
+        except CommError as e:
             self._consecutive_fails += 1
+            logger.error(f"CommError reading PLC {self.ip}: {e}")
             if self._consecutive_fails >= self.max_consecutive_fails:
                 self._disconnect()
             return {}
 
-        except Exception:
-            # error inesperado: no romper el loop
+        except Exception as e:
             self._consecutive_fails += 1
+            logger.exception(f"Unexpected error reading PLC {self.ip}: {e}")
             if self._consecutive_fails >= self.max_consecutive_fails:
                 self._disconnect()
             return {}
@@ -105,9 +122,16 @@ class RockwellSessionReader:
     # UTILS
     # =========================
 
+    def _normalize_value(self, value: Any) -> Any:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int):
+            return int(value)
+        if isinstance(value, float):
+            return float(value)
+        return value
+
     def _find_logical_tag(self, plc_tag: str) -> str:
-        # inverso rápido del tag_map
-        # (normalmente pocos tags, costo despreciable)
         for logical, plc in self.tag_map.items():
             if plc == plc_tag:
                 return logical

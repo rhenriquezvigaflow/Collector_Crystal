@@ -2,6 +2,7 @@ lagoon_id: "ava_lagoons"
 source: rockwell
 poll_seconds: 1
 
+timezone: "America/Mexico_City" 
 
 backend:
   url: "http://localhost:8000/ingest/scada"
@@ -15,7 +16,10 @@ tags:
   PT148_R_SCADA: "PT148_R_SCADA"
   PT141_R_SCADA: "PT141_R_SCADA"
   PT145_R_SCADA: "PT145_R_SCADA"
-  P002_ST_SCADA: "P002_ST_SCADA"
-  P006_ST_SCADA: "P006_ST_SCADA"
-  P007_ST_SCADA: "P007_ST_SCADA"
-  RETRO_SCADA: "RETRO_SCADA"
+  WM01_TOT_SCADA: "WM01_TOT_SCADA"
+  FIT003_R_SCADA: "FIT003_R_SCADA"
+  DIF_PRES_SCADA: "DIF_PRES_SCADA"
+  P002_STS_SCADA: "P002_STS_SCADA"
+  P006_STS_SCADA: "P006_STS_SCADA"
+  P007_STS_SCADA: "P007_STS_SCADA"
+  RETRO_SCADA: "RETRO_SCADA"  

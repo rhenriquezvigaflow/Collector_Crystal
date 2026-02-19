@@ -12,10 +12,9 @@ class BackendSender:
         self.timeout = timeout
 
         self.api_key = os.getenv("COLLECTOR_API_KEY")
-        
+
         logger.info(f"Collector API KEY = {self.api_key}")
 
-        
         if not self.api_key:
             logger.error("COLLECTOR_API_KEY NOT SET")
 
@@ -26,18 +25,18 @@ class BackendSender:
                 json={
                     "lagoon_id": str(payload.lagoon_id),
                     "source": payload.source,
-                    "timestamp": payload.timestamp.isoformat(),
+                    "timestamp": payload.timestamp.isoformat(),  # UTC
                     "tags": payload.tags,
                 },
                 headers={
-                    "X-Api-Key": self.api_key,  
+                    "X-Api-Key": self.api_key,
                 },
                 timeout=self.timeout,
             )
+
             r.raise_for_status()
             return True
 
         except Exception as e:
             logger.error(f"backend unreachable: {e}")
             return False
-
