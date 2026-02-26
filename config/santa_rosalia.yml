@@ -1,0 +1,24 @@
+lagoon_id: "laguna_santa_rosalia"
+source: rockwell
+poll_seconds: 1
+
+timezone: "Europe/Madrid" 
+
+
+backend:
+  url: "http://localhost:8000/ingest/scada"
+
+rockwell:
+  ip: "192.168.6.10"
+  slot: 0
+
+tags:
+  PT112_R_SCADA: "PT112_R_SCADA"
+  PT114_R_SCADA: "PT114_R_SCADA"
+  PT116_R_SCADA: "PT116_R_SCADA"
+  FIT002_R_SCADA: "FIT002_R_SCADA"
+  DIF_PRES_SCADA: "DIF_PRES_SCADA"
+  P005_STS_SCADA: "P005_STS_SCADA"
+  P006_STS_SCADA: "P006_STS_SCADA"
+  RETRO_SCADA: "RETRO_SCADA"
+

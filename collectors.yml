@@ -5,3 +5,4 @@ plcs:
   - include: "config/lagoon_aquavista.yml"
   - include: "config/lagoon_costadellago.yml"
   - include: "config/Ava_lagoons.yml"
+  - include: "config/santa_rosalia.yml"
