@@ -21,4 +21,11 @@ tags:
   P005_STS_SCADA: "P005_STS_SCADA"
   P006_STS_SCADA: "P006_STS_SCADA"
   RETRO_SCADA: "RETRO_SCADA"
+  VE401_ST: "VE401_ST"                                                     
+  VE244_ST: "VE244_ST"                                                     
+  VE240_ST: "VE240_ST"                                                     
+  VE402_ST: "VE402_ST"                                                     
+  VE239_ST: "VE239_ST"                                                     
+  VE238_ST: "VE238_ST"                                                     
+  VE237_ST: "VE237_ST"                                                     
 
