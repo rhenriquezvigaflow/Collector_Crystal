@@ -1,6 +1,10 @@
+import logging
+from typing import Any
+
 from opcua import Client
 from opcua.ua.uaerrors import UaError
-import time
+
+logger = logging.getLogger("siemens_reader")
 
 
 class SiemensSessionReader:
@@ -8,7 +12,7 @@ class SiemensSessionReader:
         self,
         endpoint: str,
         tag_map: dict,
-        timeout_sec: int = 4,
+        timeout_sec: float = 4,
         username: str | None = None,
         password: str | None = None,
     ):
@@ -19,12 +23,10 @@ class SiemensSessionReader:
         self.password = password
 
         self.client: Client | None = None
-        self.nodes: dict = {}
+        self.nodes: dict[str, Any] = {}
+        self._tag_ids: list[str] = []
+        self._nodes_in_order: list[Any] = []
         self._connected = False
-
-    # =========================
-    # CONNECTION
-    # =========================
 
     def connect(self):
         self.disconnect()
@@ -38,11 +40,9 @@ class SiemensSessionReader:
         client.connect()
 
         self.client = client
-        self.nodes = {
-            tag_id: client.get_node(node_id)
-            for tag_id, node_id in self.tag_map.items()
-        }
-
+        self.nodes = {tag_id: client.get_node(node_id) for tag_id, node_id in self.tag_map.items()}
+        self._tag_ids = list(self.nodes.keys())
+        self._nodes_in_order = [self.nodes[tag_id] for tag_id in self._tag_ids]
         self._connected = True
 
     def disconnect(self):
@@ -51,32 +51,28 @@ class SiemensSessionReader:
                 self.client.disconnect()
             except Exception:
                 pass
+
         self.client = None
         self.nodes = {}
+        self._tag_ids = []
+        self._nodes_in_order = []
         self._connected = False
-
-    # =========================
-    # READ
-    # =========================
 
     def read_once(self) -> dict:
         if not self._connected:
             self.connect()
 
-        values = {}
-
-        try:
-            for tag_id, node in self.nodes.items():
-                values[tag_id] = node.get_value()
-
-            return values
-
-        except UaError:
-            #  reconectar en próximo ciclo
-            self.disconnect()
+        if not self.client:
             return {}
 
-        except Exception:
-            # cualquier otro error no rompe el loop 1s
+        try:
+            raw_values = self.client.get_values(self._nodes_in_order)
+            return {tag_id: value for tag_id, value in zip(self._tag_ids, raw_values)}
+        except UaError as exc:
+            logger.warning("UaError reading Siemens endpoint=%s err=%s", self.endpoint, exc)
+            self.disconnect()
+            return {}
+        except Exception as exc:
+            logger.error("Unexpected Siemens read error endpoint=%s err=%s", self.endpoint, exc)
             self.disconnect()
             return {}

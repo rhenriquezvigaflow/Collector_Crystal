@@ -33,6 +33,7 @@ class RockwellSessionReader:
 
         # cache de direcciones PLC para batch read
         self._plc_tags = list(self.tag_map.values())
+        self._logical_by_plc_tag = {plc: logical for logical, plc in self.tag_map.items()}
 
     # =========================
     # CONNECTION
@@ -80,6 +81,8 @@ class RockwellSessionReader:
 
         try:
             results = self._driver.read(*self._plc_tags)
+            if not isinstance(results, list):
+                results = [results]
 
             for res in results:
                 if res is None:
@@ -132,7 +135,4 @@ class RockwellSessionReader:
         return value
 
     def _find_logical_tag(self, plc_tag: str) -> str:
-        for logical, plc in self.tag_map.items():
-            if plc == plc_tag:
-                return logical
-        return plc_tag
+        return self._logical_by_plc_tag.get(plc_tag, plc_tag)

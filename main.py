@@ -1,41 +1,39 @@
-import time
-import yaml
 import argparse
-import os
 import logging
+import os
+import random
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, Any
+from queue import Empty, Full, Queue
+from typing import Any, Dict
 from zoneinfo import ZoneInfo
 
+import yaml
 from dotenv import load_dotenv
 
+from common.logger import get_logger
 from common.payload import NormalizedPayload
-from common.time import utc_now
 from common.sender import BackendSender
-
+from common.time import utc_now
+from normalizer.tot_delta_normalizer import TotDeltaNormalizer
+from storage import jsonl_buffer
 from workers.get_rockwell import RockwellSessionReader
 from workers.get_siemens import SiemensSessionReader
 
-# SOLO ESTO ES NUEVO
-from normalizer.tot_delta_normalizer import TotDeltaNormalizer
-
-
-# =========================
-# ENV
-# =========================
 load_dotenv()
 
 logging.getLogger("opcua").setLevel(logging.WARNING)
 logging.getLogger("pycomm3").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 
+logger = get_logger()
 
-# ==========================================================
-# BOOLEAN EVENT DETECTOR
-# ==========================================================
+TOT_TAG = "WM01_TOT_SCADA"
+DELTA_TAG = "WM01_TOT_DELTA_SCADA"
+
 
 class BooleanEventDetector:
-
     def __init__(self):
         self.last_states: Dict[tuple, bool] = {}
 
@@ -46,8 +44,7 @@ class BooleanEventDetector:
         ts,
         event_tags: Dict[str, str],
     ) -> list[dict]:
-
-        events = []
+        events: list[dict] = []
 
         for tag_id, label in event_tags.items():
             if tag_id not in tags:
@@ -66,54 +63,46 @@ class BooleanEventDetector:
                 continue
 
             if prev is False and value is True:
-                events.append({
-                    "type": "OPEN",
-                    "lagoon_id": lagoon_id,
-                    "tag_id": tag_id,
-                    "tag_label": label,
-                    "alert_type": "BOOLEAN",
-                    "state": int(value),
-                    "ts": ts.isoformat(),
-                })
-
+                events.append(
+                    {
+                        "type": "OPEN",
+                        "lagoon_id": lagoon_id,
+                        "tag_id": tag_id,
+                        "tag_label": label,
+                        "alert_type": "BOOLEAN",
+                        "state": int(value),
+                        "ts": ts.isoformat(),
+                    }
+                )
             elif prev is True and value is False:
-                events.append({
-                    "type": "CLOSE",
-                    "lagoon_id": lagoon_id,
-                    "tag_id": tag_id,
-                    "alert_type": "BOOLEAN",
-                    "state": int(value),
-                    "ts": ts.isoformat(),
-                })
+                events.append(
+                    {
+                        "type": "CLOSE",
+                        "lagoon_id": lagoon_id,
+                        "tag_id": tag_id,
+                        "alert_type": "BOOLEAN",
+                        "state": int(value),
+                        "ts": ts.isoformat(),
+                    }
+                )
 
             self.last_states[key] = value
 
         return events
 
 
-# ==========================================================
-# STATE EVENT DETECTOR
-# ==========================================================
-
 class StateEventDetector:
-
     def __init__(self):
         self.last_states: Dict[tuple, int] = {}
 
-    def process(
-        self,
-        lagoon_id: str,
-        tags: Dict[str, Any],
-        ts,
-    ) -> list[dict]:
-
-        events = []
+    def process(self, lagoon_id: str, tags: Dict[str, Any], ts) -> list[dict]:
+        events: list[dict] = []
 
         for tag_id, raw_value in tags.items():
-
+            if isinstance(raw_value, bool):
+                continue
             if not isinstance(raw_value, int):
                 continue
-
             if raw_value not in (0, 1, 2, 3):
                 continue
 
@@ -125,28 +114,26 @@ class StateEventDetector:
                 continue
 
             if prev != raw_value:
-                events.append({
-                    "type": "STATE_CHANGE",
-                    "lagoon_id": lagoon_id,
-                    "tag_id": tag_id,
-                    "alert_type": "STATE",
-                    "previous_state": prev,
-                    "state": raw_value,
-                    "ts": ts.isoformat(),
-                })
+                events.append(
+                    {
+                        "type": "STATE_CHANGE",
+                        "lagoon_id": lagoon_id,
+                        "tag_id": tag_id,
+                        "alert_type": "STATE",
+                        "previous_state": prev,
+                        "state": raw_value,
+                        "ts": ts.isoformat(),
+                    }
+                )
 
             self.last_states[key] = raw_value
 
         return events
 
 
-# =========================
-# CONFIG
-# =========================
-
 def load_config(path: str) -> dict:
     with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        return yaml.safe_load(f) or {}
 
 
 def resolve_path(base_file: str, maybe_relative: str) -> str:
@@ -173,142 +160,315 @@ def load_plc_configs(config_path: str) -> tuple[list[dict], dict]:
     return plc_configs, root
 
 
+def as_bool(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "y", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "n", "off"}:
+            return False
+    return default
+
+
+def get_runtime_option(cfg: dict, root_cfg: dict, key: str, default: Any) -> Any:
+    cfg_runtime = cfg.get("runtime") or {}
+    root_runtime = root_cfg.get("runtime") or {}
+
+    if key in cfg_runtime:
+        return cfg_runtime[key]
+    if key in cfg:
+        return cfg[key]
+    if key in root_runtime:
+        return root_runtime[key]
+    if key in root_cfg:
+        return root_cfg[key]
+    return default
+
+
 def get_backend_sender(cfg: dict, root_cfg: dict) -> BackendSender | None:
-    backend_url = (cfg.get("backend") or {}).get("url")
+    backend_cfg = dict(root_cfg.get("backend") or {})
+    backend_cfg.update(cfg.get("backend") or {})
+
+    backend_url = backend_cfg.get("url")
     if not backend_url:
-        backend_url = (root_cfg.get("backend") or {}).get("url")
-    if backend_url:
-        return BackendSender(backend_url)
-    return None
+        return None
+
+    return BackendSender(
+        url=backend_url,
+        timeout=float(backend_cfg.get("timeout_sec", 3.0)),
+        send_events=as_bool(backend_cfg.get("send_events", False), False),
+        pool_connections=int(backend_cfg.get("pool_connections", 50)),
+        pool_maxsize=int(backend_cfg.get("pool_maxsize", 200)),
+    )
 
 
-# ==========================================================
-# MAIN LOOP
-# ==========================================================
+def spool_payload(payload: NormalizedPayload):
+    try:
+        jsonl_buffer.append(payload.model_dump_json())
+    except Exception as exc:
+        logger.error("buffer append failed: %s", exc)
+
+
+def enqueue_payload(send_queue: Queue, payload: NormalizedPayload, policy: str) -> bool:
+    if policy == "block":
+        send_queue.put(payload)
+        return True
+
+    try:
+        send_queue.put_nowait(payload)
+        return True
+    except Full:
+        if policy != "drop_oldest":
+            return False
+
+    try:
+        _ = send_queue.get_nowait()
+        send_queue.task_done()
+    except Empty:
+        return False
+
+    try:
+        send_queue.put_nowait(payload)
+        return True
+    except Full:
+        return False
+
+
+def sender_worker_loop(
+    lagoon_id: str,
+    sender: BackendSender,
+    send_queue: Queue,
+    spool_on_fail: bool,
+    log_every_n_sends: int,
+):
+    sent = 0
+    failed = 0
+
+    while True:
+        payload = send_queue.get()
+
+        try:
+            ok = sender.send(payload)
+            if ok:
+                sent += 1
+            else:
+                failed += 1
+                if spool_on_fail:
+                    spool_payload(payload)
+        except Exception as exc:
+            failed += 1
+            logger.error(
+                "sender worker crashed lagoon=%s err=%s",
+                lagoon_id,
+                exc,
+            )
+            if spool_on_fail:
+                spool_payload(payload)
+        finally:
+            send_queue.task_done()
+
+        total = sent + failed
+        if log_every_n_sends > 0 and total > 0 and total % log_every_n_sends == 0:
+            logger.info(
+                "SEND lagoon=%s sent=%s failed=%s queue=%s",
+                lagoon_id,
+                sent,
+                failed,
+                send_queue.qsize(),
+            )
+
 
 def run_one_plc(cfg: dict, root_cfg: dict):
-
     lagoon_id = cfg["lagoon_id"]
-    source = cfg["source"]
+    source = str(cfg["source"]).strip().lower()
     poll = float(cfg.get("poll_seconds", 1))
+    if poll <= 0:
+        logger.warning("poll_seconds<=0 lagoon=%s fallback=0.1", lagoon_id)
+        poll = 0.1
 
     lagoon_timezone = cfg.get("timezone")
     if not lagoon_timezone:
         raise ValueError(f"Timezone not specified in config for lagoon {lagoon_id}")
 
-    tz = ZoneInfo(lagoon_timezone)
+    try:
+        tz = ZoneInfo(lagoon_timezone)
+    except Exception as exc:
+        raise ValueError(f"Invalid timezone {lagoon_timezone} for lagoon {lagoon_id}") from exc
 
     sender = get_backend_sender(cfg, root_cfg)
+    send_queue: Queue | None = None
+
+    send_queue_maxsize = int(get_runtime_option(cfg, root_cfg, "send_queue_maxsize", 1000))
+    send_queue_maxsize = max(1, send_queue_maxsize)
+    send_queue_full_policy = str(
+        get_runtime_option(cfg, root_cfg, "send_queue_full_policy", "drop_newest")
+    ).strip().lower()
+    if send_queue_full_policy not in {"drop_newest", "drop_oldest", "block"}:
+        logger.warning(
+            "invalid send_queue_full_policy lagoon=%s value=%s fallback=drop_newest",
+            lagoon_id,
+            send_queue_full_policy,
+        )
+        send_queue_full_policy = "drop_newest"
+
+    spool_on_send_fail = as_bool(get_runtime_option(cfg, root_cfg, "spool_on_send_fail", True), True)
+    log_every_n_cycles = int(get_runtime_option(cfg, root_cfg, "log_every_n_cycles", 10))
+    log_every_n_sends = int(get_runtime_option(cfg, root_cfg, "log_every_n_sends", 100))
+    startup_jitter_max_sec = max(
+        0.0,
+        float(get_runtime_option(cfg, root_cfg, "startup_jitter_max_sec", min(0.25, poll))),
+    )
+    enable_state_events = as_bool(get_runtime_option(cfg, root_cfg, "enable_state_events", True), True)
+
+    if sender:
+        send_queue = Queue(maxsize=send_queue_maxsize)
+        sender_thread = threading.Thread(
+            target=sender_worker_loop,
+            args=(
+                lagoon_id,
+                sender,
+                send_queue,
+                spool_on_send_fail,
+                log_every_n_sends,
+            ),
+            name=f"sender-{lagoon_id}",
+            daemon=True,
+        )
+        sender_thread.start()
 
     boolean_detector = BooleanEventDetector()
     state_detector = StateEventDetector()
-
-    # SOLO ESTO ES NUEVO
     tot_normalizer = TotDeltaNormalizer()
 
-    event_tags = cfg.get("event_tags", {})
+    event_tags = cfg.get("event_tags", {}) or {}
 
     if source == "rockwell":
+        rockwell_cfg = cfg["rockwell"]
         reader = RockwellSessionReader(
-            ip=cfg["rockwell"]["ip"],
-            slot=int(cfg["rockwell"].get("slot", 0)),
+            ip=rockwell_cfg["ip"],
+            slot=int(rockwell_cfg.get("slot", 0)),
             tag_map=cfg["tags"],
             force_reconnect_every_sec=int(cfg.get("force_reconnect_every_sec", 3600)),
             max_consecutive_fails=int(cfg.get("max_consecutive_fails", 10)),
+            timeout_sec=float(rockwell_cfg.get("timeout_sec", 5.0)),
         )
     elif source == "siemens":
-        si = cfg["siemens"]
+        siemens_cfg = cfg["siemens"]
         reader = SiemensSessionReader(
-            endpoint=si["opc_server_url"],
+            endpoint=siemens_cfg["opc_server_url"],
             tag_map=cfg["tags"],
-            username=si.get("username"),
-            password=si.get("password"),
+            timeout_sec=float(siemens_cfg.get("timeout_sec", 4)),
+            username=siemens_cfg.get("username"),
+            password=siemens_cfg.get("password"),
         )
     else:
         raise ValueError(f"Unsupported source: {source}")
 
-    print(f"START {source} lagoon={lagoon_id}")
+    startup_jitter = random.uniform(0.0, startup_jitter_max_sec)
+    if startup_jitter > 0:
+        time.sleep(startup_jitter)
+
+    logger.info(
+        "START source=%s lagoon=%s poll=%.2fs queue=%s policy=%s",
+        source,
+        lagoon_id,
+        poll,
+        send_queue_maxsize if send_queue else 0,
+        send_queue_full_policy if send_queue else "disabled",
+    )
+
+    cycle_count = 0
+    dropped_count = 0
+    next_tick = time.perf_counter()
 
     while True:
+        cycle_count += 1
         cycle_start = time.perf_counter()
+        tags: dict[str, Any] = {}
+        all_events: list[dict] = []
+        timestamp_utc = utc_now()
 
         try:
             raw_tags = reader.read_once()
-        except Exception as e:
-            elapsed = time.perf_counter() - cycle_start
-            print(f"ERR {source} lagoon={lagoon_id} err={e} cycle={elapsed*1000:.1f}ms")
-            time.sleep(min(1.0, poll))
-            continue
+            tags = dict(raw_tags or {})
+        except Exception as exc:
+            logger.error("ERR source=%s lagoon=%s err=%s", source, lagoon_id, exc)
 
-        # =========================
-        # COPIA DEFENSIVA
-        # =========================
-        tags = dict(raw_tags)
+        if tags:
+            if TOT_TAG in tags:
+                key = f"{lagoon_id}:{TOT_TAG}"
+                delta = tot_normalizer.compute(key, tags.get(TOT_TAG))
+                tags[DELTA_TAG] = delta
 
-        # =========================
-        # WM001 TOT -> DELTA
-        # =========================
-        TOT_TAG = "WM01_TOT_SCADA"
-        DELTA_TAG = "WM01_TOT_DELTA_SCADA"
-
-        if TOT_TAG in tags:
-            key = f"{lagoon_id}:{TOT_TAG}"
-            delta = tot_normalizer.compute(key, tags.get(TOT_TAG))
-            tags[DELTA_TAG] = delta
-
-
-        timestamp_utc = utc_now()
-
-
-        payload = NormalizedPayload(
-            lagoon_id=lagoon_id,
-            source=source,
-            timestamp=timestamp_utc,
-            tags=tags,
-        )
-
-
-        # BOOLEAN EVENTS
-        bool_events = boolean_detector.process(
-            lagoon_id=lagoon_id,
-            tags=tags,
-            ts=payload.timestamp,
-            event_tags=event_tags,
-        )
-
-        # STATE EVENTS
-        state_events = state_detector.process(
-            lagoon_id=lagoon_id,
-            tags=tags,
-            ts=payload.timestamp,
-        )
-
-        all_events = bool_events + state_events
-
-        if all_events:
-            payload.events = all_events
-
-        if sender:
-            sender.send(payload)
-            elapsed = time.perf_counter() - cycle_start
-
-            print(
-                f"OK {source} lagoon={lagoon_id} "
-                f"utc={timestamp_utc.isoformat()} "
-                f"tags={len(tags)} "
-                f"events={len(all_events)} "
-                f"cycle={elapsed*1000:.1f}ms"
+            payload = NormalizedPayload(
+                lagoon_id=lagoon_id,
+                source=source,
+                timestamp=timestamp_utc,
+                tags=tags,
             )
 
-        elapsed = time.perf_counter() - cycle_start
-        sleep_for = poll - elapsed
+            if event_tags:
+                all_events.extend(
+                    boolean_detector.process(
+                        lagoon_id=lagoon_id,
+                        tags=tags,
+                        ts=payload.timestamp,
+                        event_tags=event_tags,
+                    )
+                )
+
+            if enable_state_events:
+                all_events.extend(
+                    state_detector.process(
+                        lagoon_id=lagoon_id,
+                        tags=tags,
+                        ts=payload.timestamp,
+                    )
+                )
+
+            if all_events:
+                payload.events = all_events
+
+            if sender and send_queue:
+                enqueued = enqueue_payload(send_queue, payload, send_queue_full_policy)
+                if not enqueued:
+                    dropped_count += 1
+                    if spool_on_send_fail:
+                        spool_payload(payload)
+        else:
+            if log_every_n_cycles > 0 and cycle_count % log_every_n_cycles == 0:
+                logger.warning("EMPTY source=%s lagoon=%s", source, lagoon_id)
+
+        if log_every_n_cycles > 0 and cycle_count % log_every_n_cycles == 0:
+            elapsed = time.perf_counter() - cycle_start
+            queue_depth = send_queue.qsize() if send_queue else 0
+            local_ts = timestamp_utc.astimezone(tz).isoformat()
+            logger.info(
+                "OK source=%s lagoon=%s utc=%s local=%s tags=%s events=%s cycle=%.1fms queue=%s dropped=%s",
+                source,
+                lagoon_id,
+                timestamp_utc.isoformat(),
+                local_ts,
+                len(tags),
+                len(all_events),
+                elapsed * 1000,
+                queue_depth,
+                dropped_count,
+            )
+
+        next_tick += poll
+        sleep_for = next_tick - time.perf_counter()
         if sleep_for > 0:
             time.sleep(sleep_for)
+        else:
+            next_tick = time.perf_counter()
 
-
-# =========================
-# ENTRYPOINT
-# =========================
 
 def main(config_path: str):
     plc_configs, root_cfg = load_plc_configs(config_path)
@@ -317,18 +477,16 @@ def main(config_path: str):
         run_one_plc(plc_configs[0], root_cfg)
         return
 
-    print(f"MASTER: starting {len(plc_configs)} PLCs")
+    logger.info("MASTER: starting %s PLCs", len(plc_configs))
 
-    with ThreadPoolExecutor(max_workers=len(plc_configs)) as ex:
-        futures = []
-        for cfg in plc_configs:
-            futures.append(ex.submit(run_one_plc, cfg, root_cfg))
+    with ThreadPoolExecutor(max_workers=len(plc_configs), thread_name_prefix="plc") as ex:
+        futures = [ex.submit(run_one_plc, cfg, root_cfg) for cfg in plc_configs]
 
-        for f in futures:
+        for future in futures:
             try:
-                f.result()
-            except Exception as e:
-                print("[THREAD ERROR]", e)
+                future.result()
+            except Exception as exc:
+                logger.error("[THREAD ERROR] %s", exc)
 
 
 if __name__ == "__main__":
