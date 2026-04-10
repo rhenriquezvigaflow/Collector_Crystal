@@ -1,0 +1,32 @@
+lagoon_id: "central_district_dubai"
+source: rockwell
+poll_seconds: 1
+
+timezone: "Asia/Dubai" 
+
+backend:
+  url: "http://localhost:8000/ingest/scada"
+
+rockwell:
+  ip: "192.168.19.10"
+  slot: 0
+
+tags:
+  PT112_R: "PT112_R"
+  PT117_R: "PT117_R"
+  PT116_R: "PT116_R"
+  TOT_WM001: "TOT_WM001"
+  FIT002_R: "FIT002_R"
+  BACKWASH.DIFF_PRES: "BACKWASH.DIFF_PRES"
+  P005_ST: "P005_ST"
+  P006_ST: "P006_ST"
+  P009_ST: "P009_ST"
+  P007_ST: "P007_ST"
+  P008_ST: "P008_ST"
+  VE237_ST: "VE237_ST"
+  VE238_ST: "VE238_ST"
+  VE239_ST: "VE239_ST"
+  VE240_ST: "VE240_ST"
+  VE244_ST: "VE244_ST"
+  VE401_ST: "VE401_ST"
+  VE402_ST: "VE402_ST"
