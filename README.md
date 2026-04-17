@@ -1,23 +1,33 @@
 # Collector Python - Crystal Lagoons
 
-Collector SCADA en Python para leer tags de PLCs (Rockwell y Siemens) y enviarlos por HTTP.
+Collector SCADA en Python para leer tags desde PLCs Rockwell o Siemens y publicar telemetria al backend por HTTP.
 
 ## Estado actual
 
-- Lee tags en ciclo continuo (`poll_seconds`).
-- Soporta `source: rockwell` y `source: siemens`.
-- Soporta modo single o multi PLC por `collectors.yml` + `include`.
-- Normaliza `WM01_TOT_SCADA` -> `WM01_TOT_DELTA_SCADA`.
-- Usa envio HTTP asincrono por laguna con cola en memoria (lectura desacoplada del POST).
-- Reutiliza conexiones HTTP con `requests.Session` + pool.
-- Si el backend falla o la cola se llena, puede persistir payloads en `data/buffer.jsonl`.
-- Lectura Siemens en batch (`client.get_values`) en un solo roundtrip por ciclo.
-- Mapeo Rockwell optimizado (`plc_tag -> logical_tag`) para reducir CPU con muchos tags.
+- Soporta modo single PLC y modo multi-laguna usando un archivo master con `plcs[].include`.
+- Mantiene una hebra lectora por PLC y, cuando hay backend configurado, una hebra sender por laguna.
+- Desacopla lectura y envio con `Queue`, para que la latencia HTTP no bloquee el ciclo del PLC.
+- Normaliza `WM01_TOT_SCADA` a `WM01_TOT_DELTA_SCADA`.
+- Detecta eventos booleanos (`OPEN`/`CLOSE`) y cambios de estado enteros (`STATE_CHANGE`).
+- Reutiliza conexiones HTTP con `requests.Session` y pool configurable.
+- Si el backend falla, hace spool por laguna en `data/spool/<lagoon_id>.jsonl`.
+- Reproduce automaticamente el spool cuando la cola en memoria queda vacia.
+- Migra automaticamente el buffer legacy `data/buffer.jsonl` al formato por laguna al arrancar.
+
+## Estructura importante
+
+- `main.py`: orquestacion, carga YAML, readers, queue y sender threads.
+- `workers/get_rockwell.py`: lectura batch de tags Rockwell.
+- `workers/get_siemens.py`: lectura batch OPC-UA para Siemens.
+- `common/sender.py`: cliente HTTP con `X-Api-Key` y pool de conexiones.
+- `storage/jsonl_buffer.py`: spool, replay y migracion del buffer legacy.
+- `normalizer/tot_delta_normalizer.py`: calcula delta del tag TOT.
+- `supervisor.py`: wrapper para reiniciar `main.py` si el proceso cae.
 
 ## Requisitos
 
 - Python 3.10+.
-- Red con acceso a PLCs y backend.
+- Acceso de red a PLCs y backend.
 - Variable de entorno `COLLECTOR_API_KEY`.
 
 ## Instalacion
@@ -32,13 +42,17 @@ pip install -r requirements.txt
 
 ### Variables de entorno
 
-`.env`:
+`.env` minimo:
 
 ```env
 COLLECTOR_API_KEY=tu-api-key
 ```
 
-### Ejemplo single PLC
+Variable opcional:
+
+- `COLLECTOR_SEND_ERROR_LOG_INTERVAL_SEC`: rate limit de logs repetidos de fallo HTTP.
+
+### Configuracion single PLC
 
 ```yaml
 lagoon_id: "aquavista"
@@ -51,12 +65,16 @@ backend:
   timeout_sec: 3
   pool_connections: 50
   pool_maxsize: 200
-  send_events: false
+  send_events: true
 
 runtime:
   send_queue_maxsize: 1000
-  send_queue_full_policy: "drop_newest"   # drop_newest | drop_oldest | block
+  send_queue_full_policy: "drop_newest"
   spool_on_send_fail: true
+  replay_spool_batch_size: 50
+  send_retry_attempts: 2
+  send_retry_backoff_base_sec: 1.0
+  send_retry_backoff_max_sec: 8.0
   startup_jitter_max_sec: 0.25
   log_every_n_cycles: 10
   log_every_n_sends: 100
@@ -67,10 +85,13 @@ siemens:
   timeout_sec: 1
 
 tags:
-  Tags_01_Real: "ns=4;i=3"
+  PT117_R_SCADA: "ns=4;i=3"
+
+event_tags:
+  VE001_ST: "Valvula VE001"
 ```
 
-### Ejemplo master
+### Configuracion master
 
 ```yaml
 backend:
@@ -80,7 +101,6 @@ runtime:
   send_queue_maxsize: 1000
   send_queue_full_policy: "drop_newest"
   spool_on_send_fail: true
-  log_every_n_cycles: 10
 
 plcs:
   - include: "config/lagoon_aquavista.yml"
@@ -88,21 +108,31 @@ plcs:
   - include: "config/Ava_lagoons.yml"
 ```
 
-## Campos importantes
+## Opciones de runtime importantes
 
-- `lagoon_id` (requerido): identificador de laguna.
-- `source` (requerido): `rockwell` o `siemens`.
-- `timezone` (requerido): zona IANA valida.
-- `tags` (requerido): mapa `tag_logica -> tag_plc`.
-- `poll_seconds` (default `1`).
-- `backend.url` (practicamente requerido para envio).
-- `backend.timeout_sec`, `backend.pool_connections`, `backend.pool_maxsize`.
-- `runtime.send_queue_maxsize`, `runtime.send_queue_full_policy`.
-- `runtime.spool_on_send_fail` para escribir JSONL local.
-- `runtime.startup_jitter_max_sec` para evitar picos sincronizados.
-- `runtime.log_every_n_cycles` y `runtime.log_every_n_sends`.
-- `runtime.enable_state_events` para detector de estados enteros.
-- `event_tags` (opcional) para eventos booleanos `OPEN/CLOSE`.
+- `send_queue_maxsize`: tamano de la cola por laguna.
+- `send_queue_full_policy`: `drop_newest`, `drop_oldest` o `block`.
+- `spool_on_send_fail`: persiste payloads fallidos a disco.
+- `replay_spool_batch_size`: cuantos payloads del spool intenta reprocesar por tanda.
+- `send_retry_attempts`: reintentos HTTP por payload antes de spooling.
+- `send_retry_backoff_base_sec` y `send_retry_backoff_max_sec`: backoff exponencial.
+- `startup_jitter_max_sec`: evita bursts sincronizados entre lagunas.
+- `enable_state_events`: habilita eventos por cambios enteros `0..3`.
+
+Opciones especificas Rockwell:
+
+- `force_reconnect_every_sec`
+- `max_consecutive_fails`
+- `rockwell.ip`
+- `rockwell.slot`
+- `rockwell.timeout_sec`
+
+Opciones especificas Siemens:
+
+- `siemens.opc_server_url`
+- `siemens.timeout_sec`
+- `siemens.username`
+- `siemens.password`
 
 ## Ejecucion
 
@@ -110,7 +140,7 @@ plcs:
 python main.py --config collectors.yml
 ```
 
-o:
+o
 
 ```powershell
 python main.py --config config\Ava_lagoons.yml
@@ -122,38 +152,59 @@ Tambien puedes usar:
 run_collector.bat
 ```
 
-## Payload HTTP
+## Payload enviado al backend
 
-Body base:
+Base:
 
 ```json
 {
   "lagoon_id": "ava_lagoons",
   "source": "rockwell",
-  "timestamp": "2026-02-25T18:32:00.000000+00:00",
+  "timestamp": "2026-04-17T14:32:00+00:00",
   "tags": {
-    "PT117_R_SCADA": 12.34
+    "PT117_R_SCADA": 12.34,
+    "WM01_TOT_DELTA_SCADA": 0.17
   }
 }
 ```
 
-Si `backend.send_events: true` y existen eventos, se agrega `events`.
+Si `backend.send_events=true` y hubo eventos, se agrega:
+
+```json
+{
+  "events": [
+    {
+      "type": "STATE_CHANGE",
+      "lagoon_id": "ava_lagoons",
+      "tag_id": "P005_STS_SCADA",
+      "alert_type": "STATE",
+      "previous_state": 1,
+      "state": 3,
+      "ts": "2026-04-17T14:32:00+00:00"
+    }
+  ]
+}
+```
 
 ## Observabilidad
 
-Logs principales:
+Mensajes relevantes:
 
-- `START source=<source> lagoon=<id> poll=<sec> queue=<n> policy=<policy>`
-- `OK source=<source> lagoon=<id> utc=<ts> local=<ts> tags=<n> events=<n> cycle=<ms> queue=<n> dropped=<n>`
-- `EMPTY source=<source> lagoon=<id>`
-- `SEND lagoon=<id> sent=<n> failed=<n> queue=<n>`
-- `ERR source=<source> lagoon=<id> err=<msg>`
+- `[COLLECTOR START]`
+- `[COLLECTOR CYCLE]`
+- `[COLLECTOR EMPTY]`
+- `[COLLECTOR SEND STATS]`
+- `[SPOOL REPLAY]`
+- `[COLLECTOR STARTUP] migrated_spool_lagoons=...`
+- `[COLLECTOR WORKER ERROR]`
 
-## Limitaciones actuales
+## Limitaciones conocidas
 
-- `storage/pg_writer.py` sigue sin implementacion.
-- No existe replay automatico del `buffer.jsonl` hacia backend (solo spool local).
+- `storage/pg_writer.py` sigue sin uso productivo.
+- El spool es JSONL local; no hay servicio separado de replay externo.
+- La precision del scheduler depende del host y del tiempo de lectura del PLC.
 
-## Arquitectura
+## Documentacion relacionada
 
-Detalle en [ARQUITECTURA.md](ARQUITECTURA.md).
+- `ARQUITECTURA.md`: arquitectura y flujos.
+- `DOCUMENTACION_TECNICA.md`: operacion, tuning y troubleshooting.

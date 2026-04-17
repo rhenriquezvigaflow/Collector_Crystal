@@ -1,0 +1,30 @@
+﻿lagoon_id: "kirah"
+source: rockwell
+poll_seconds: 1
+
+timezone: "America/Mexico_City" 
+
+
+backend:
+  url: "http://localhost:8000/ingest/scada"
+
+rockwell:
+  ip: "192.168.22.10"
+  slot: 0
+
+tags:
+  PT115_R : "PT115_R"
+  PT119_R : "PT119_R"
+  PT122_R : "PT122_R"
+  PT123_R : "PT123_R"
+  PT143_R : "PT143_R"
+  FIT002 : "FIT002"
+  WM01_TOT : "WM01_TOT"
+  BACKWASH.DIFF_PRES : "BACKWASH_DIFF_PRES"
+  P002_STS : "P002_STS"
+  P006_STS : "P006_STS"
+  P007_STS : "P007_STS"
+  RETRO_SCADA : "RETRO_SCADA"
+  P017_STS : "P017_STS"
+  P016_STS : "P016_STS"
+  P015_STS : "P015_STS"        

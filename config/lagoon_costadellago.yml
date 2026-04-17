@@ -1,4 +1,4 @@
-lagoon_id: "costa_del_lago"
+﻿lagoon_id: "costa_del_lago"
 source: rockwell
 poll_seconds: 1
 
@@ -6,7 +6,7 @@ timezone: "America/Asuncion"
 
 
 backend:
-  url: "http://localhost:8000/ingest/scada"
+  url: "http://127.0.0.1:8090/ingest/scada"
 
 rockwell:
   ip: "192.168.11.10"
@@ -27,5 +27,8 @@ tags:
   P017_STS_SCADA: "P017_STS_SCADA"
   P016_STS_SCADA: "P016_STS_SCADA"
   P015_STS_SCADA: "P015_STS_SCADA"
+
+
+
 
 

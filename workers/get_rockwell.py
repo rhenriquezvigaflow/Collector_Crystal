@@ -1,11 +1,11 @@
 from pycomm3 import LogixDriver
 from pycomm3.exceptions import CommError
 import time
-import logging
 from typing import Any
 
+from common.logger import get_logger
 
-logger = logging.getLogger("rockwell_reader")
+logger = get_logger("collector.rockwell")
 
 
 class RockwellSessionReader:
@@ -53,7 +53,7 @@ class RockwellSessionReader:
         self._last_connect_ts = time.time()
         self._consecutive_fails = 0
 
-        logger.info(f"Connected to Rockwell PLC {self.ip}")
+        logger.info("Connected to Rockwell PLC ip=%s", self.ip)
 
     def _disconnect(self):
         if self._driver:
@@ -100,8 +100,10 @@ class RockwellSessionReader:
                 values[logical_tag] = value
                 if self.debug_types:
                     logger.warning(
-                        f"PLC READ tag={logical_tag} "
-                        f"value={value} type={type(value).__name__}"
+                        "Debug read tag=%s value=%s type=%s",
+                        logical_tag,
+                        value,
+                        type(value).__name__,
                     )
 
             self._consecutive_fails = 0
@@ -109,14 +111,14 @@ class RockwellSessionReader:
 
         except CommError as e:
             self._consecutive_fails += 1
-            logger.error(f"CommError reading PLC {self.ip}: {e}")
+            logger.error("Rockwell read failed ip=%s err=%s", self.ip, e)
             if self._consecutive_fails >= self.max_consecutive_fails:
                 self._disconnect()
             return {}
 
         except Exception as e:
             self._consecutive_fails += 1
-            logger.exception(f"Unexpected error reading PLC {self.ip}: {e}")
+            logger.exception("Rockwell read crashed ip=%s err=%s", self.ip, e)
             if self._consecutive_fails >= self.max_consecutive_fails:
                 self._disconnect()
             return {}

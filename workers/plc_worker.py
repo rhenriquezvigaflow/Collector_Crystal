@@ -1,8 +1,11 @@
 # workers/plc_worker.py
 import time
 import threading
+from common.logger import get_logger
 from common.payload import NormalizedPayload
 from common.time import utc_now
+
+logger = get_logger("collector.plc_worker")
 
 class PLCWorker(threading.Thread):
     def __init__(self, name, reader, lagoon_id, source, poll_seconds, out_queue):
@@ -31,7 +34,7 @@ class PLCWorker(threading.Thread):
                 )
                 self.out_queue.put(payload)
             except Exception as e:
-                print(f"[{self.name}] PLC error: {e}")
+                logger.error("PLC read failed worker=%s lagoon=%s err=%s", self.name, self.lagoon_id, e)
 
             next_tick += self.poll_seconds
             sleep_for = next_tick - time.perf_counter()

@@ -210,9 +210,54 @@ def get_backend_sender(cfg: dict, root_cfg: dict) -> BackendSender | None:
 
 def spool_payload(payload: NormalizedPayload):
     try:
-        jsonl_buffer.append(payload.model_dump_json())
+        jsonl_buffer.append_for_lagoon(
+            lagoon_id=str(payload.lagoon_id),
+            payload_json=payload.model_dump_json(),
+        )
     except Exception as exc:
-        logger.error("buffer append failed: %s", exc)
+        logger.error(
+            "[BUFFER ERROR] lagoon=%s err=%s",
+            payload.lagoon_id,
+            exc,
+        )
+
+
+def send_with_retry(
+    sender: BackendSender,
+    payload: NormalizedPayload,
+    retry_attempts: int,
+    retry_backoff_base_sec: float,
+    retry_backoff_max_sec: float,
+) -> bool:
+    attempts = max(0, retry_attempts)
+    max_attempts = attempts + 1
+
+    for attempt in range(1, max_attempts + 1):
+        if sender.send(payload):
+            return True
+
+        if attempt >= max_attempts:
+            break
+
+        delay_sec = min(
+            retry_backoff_base_sec * (2 ** (attempt - 1)),
+            retry_backoff_max_sec,
+        )
+        time.sleep(max(0.0, delay_sec))
+
+    return False
+
+
+def replay_spool(
+    lagoon_id: str,
+    sender: BackendSender,
+    replay_batch_size: int,
+) -> tuple[int, int, int]:
+    return jsonl_buffer.replay_for_lagoon(
+        lagoon_id=lagoon_id,
+        send_payload=sender.send,
+        max_items=max(1, replay_batch_size),
+    )
 
 
 def enqueue_payload(send_queue: Queue, payload: NormalizedPayload, policy: str) -> bool:
@@ -246,15 +291,43 @@ def sender_worker_loop(
     send_queue: Queue,
     spool_on_fail: bool,
     log_every_n_sends: int,
+    replay_batch_size: int,
+    retry_attempts: int,
+    retry_backoff_base_sec: float,
+    retry_backoff_max_sec: float,
 ):
     sent = 0
     failed = 0
 
     while True:
-        payload = send_queue.get()
+        if send_queue.qsize() == 0:
+            replayed, pending_spool, dropped_spool = replay_spool(
+                lagoon_id=lagoon_id,
+                sender=sender,
+                replay_batch_size=replay_batch_size,
+            )
+            if replayed or dropped_spool:
+                logger.info(
+                    "[SPOOL REPLAY] lagoon=%s replayed=%s pending=%s dropped=%s",
+                    lagoon_id,
+                    replayed,
+                    pending_spool,
+                    dropped_spool,
+                )
 
         try:
-            ok = sender.send(payload)
+            payload = send_queue.get(timeout=1.0)
+        except Empty:
+            continue
+
+        try:
+            ok = send_with_retry(
+                sender=sender,
+                payload=payload,
+                retry_attempts=retry_attempts,
+                retry_backoff_base_sec=retry_backoff_base_sec,
+                retry_backoff_max_sec=retry_backoff_max_sec,
+            )
             if ok:
                 sent += 1
             else:
@@ -264,7 +337,7 @@ def sender_worker_loop(
         except Exception as exc:
             failed += 1
             logger.error(
-                "sender worker crashed lagoon=%s err=%s",
+                "[SENDER ERROR] lagoon=%s err=%s",
                 lagoon_id,
                 exc,
             )
@@ -275,8 +348,8 @@ def sender_worker_loop(
 
         total = sent + failed
         if log_every_n_sends > 0 and total > 0 and total % log_every_n_sends == 0:
-            logger.info(
-                "SEND lagoon=%s sent=%s failed=%s queue=%s",
+            logger.debug(
+                "[COLLECTOR SEND STATS] lagoon=%s sent=%s failed=%s queue=%s",
                 lagoon_id,
                 sent,
                 failed,
@@ -289,7 +362,7 @@ def run_one_plc(cfg: dict, root_cfg: dict):
     source = str(cfg["source"]).strip().lower()
     poll = float(cfg.get("poll_seconds", 1))
     if poll <= 0:
-        logger.warning("poll_seconds<=0 lagoon=%s fallback=0.1", lagoon_id)
+        logger.warning("[COLLECTOR CONFIG] lagoon=%s reason=invalid_poll_seconds fallback=0.1", lagoon_id)
         poll = 0.1
 
     lagoon_timezone = cfg.get("timezone")
@@ -311,7 +384,7 @@ def run_one_plc(cfg: dict, root_cfg: dict):
     ).strip().lower()
     if send_queue_full_policy not in {"drop_newest", "drop_oldest", "block"}:
         logger.warning(
-            "invalid send_queue_full_policy lagoon=%s value=%s fallback=drop_newest",
+            "[COLLECTOR CONFIG] lagoon=%s reason=invalid_queue_policy value=%s fallback=drop_newest",
             lagoon_id,
             send_queue_full_policy,
         )
@@ -320,6 +393,18 @@ def run_one_plc(cfg: dict, root_cfg: dict):
     spool_on_send_fail = as_bool(get_runtime_option(cfg, root_cfg, "spool_on_send_fail", True), True)
     log_every_n_cycles = int(get_runtime_option(cfg, root_cfg, "log_every_n_cycles", 10))
     log_every_n_sends = int(get_runtime_option(cfg, root_cfg, "log_every_n_sends", 100))
+    replay_batch_size = int(
+        get_runtime_option(cfg, root_cfg, "replay_spool_batch_size", 50)
+    )
+    retry_attempts = int(
+        get_runtime_option(cfg, root_cfg, "send_retry_attempts", 2)
+    )
+    retry_backoff_base_sec = float(
+        get_runtime_option(cfg, root_cfg, "send_retry_backoff_base_sec", 1.0)
+    )
+    retry_backoff_max_sec = float(
+        get_runtime_option(cfg, root_cfg, "send_retry_backoff_max_sec", 8.0)
+    )
     startup_jitter_max_sec = max(
         0.0,
         float(get_runtime_option(cfg, root_cfg, "startup_jitter_max_sec", min(0.25, poll))),
@@ -336,6 +421,10 @@ def run_one_plc(cfg: dict, root_cfg: dict):
                 send_queue,
                 spool_on_send_fail,
                 log_every_n_sends,
+                replay_batch_size,
+                retry_attempts,
+                retry_backoff_base_sec,
+                retry_backoff_max_sec,
             ),
             name=f"sender-{lagoon_id}",
             daemon=True,
@@ -375,9 +464,9 @@ def run_one_plc(cfg: dict, root_cfg: dict):
         time.sleep(startup_jitter)
 
     logger.info(
-        "START source=%s lagoon=%s poll=%.2fs queue=%s policy=%s",
-        source,
+        "[COLLECTOR START] lagoon=%s source=%s poll=%.2fs queue=%s policy=%s",
         lagoon_id,
+        source,
         poll,
         send_queue_maxsize if send_queue else 0,
         send_queue_full_policy if send_queue else "disabled",
@@ -398,7 +487,7 @@ def run_one_plc(cfg: dict, root_cfg: dict):
             raw_tags = reader.read_once()
             tags = dict(raw_tags or {})
         except Exception as exc:
-            logger.error("ERR source=%s lagoon=%s err=%s", source, lagoon_id, exc)
+            logger.error("[COLLECTOR READ ERROR] lagoon=%s source=%s err=%s", lagoon_id, source, exc)
 
         if tags:
             if TOT_TAG in tags:
@@ -443,23 +532,23 @@ def run_one_plc(cfg: dict, root_cfg: dict):
                         spool_payload(payload)
         else:
             if log_every_n_cycles > 0 and cycle_count % log_every_n_cycles == 0:
-                logger.warning("EMPTY source=%s lagoon=%s", source, lagoon_id)
+                logger.warning("[COLLECTOR EMPTY] lagoon=%s source=%s", lagoon_id, source)
 
         if log_every_n_cycles > 0 and cycle_count % log_every_n_cycles == 0:
             elapsed = time.perf_counter() - cycle_start
             queue_depth = send_queue.qsize() if send_queue else 0
             local_ts = timestamp_utc.astimezone(tz).isoformat()
-            logger.info(
-                "OK source=%s lagoon=%s utc=%s local=%s tags=%s events=%s cycle=%.1fms queue=%s dropped=%s",
-                source,
+            logger.debug(
+                "[COLLECTOR CYCLE] lagoon=%s source=%s tags=%s events=%s queue=%s dropped=%s elapsed=%.1fms utc=%s local=%s",
                 lagoon_id,
-                timestamp_utc.isoformat(),
-                local_ts,
+                source,
                 len(tags),
                 len(all_events),
-                elapsed * 1000,
                 queue_depth,
                 dropped_count,
+                elapsed * 1000,
+                timestamp_utc.isoformat(),
+                local_ts,
             )
 
         next_tick += poll
@@ -472,12 +561,15 @@ def run_one_plc(cfg: dict, root_cfg: dict):
 
 def main(config_path: str):
     plc_configs, root_cfg = load_plc_configs(config_path)
+    migrated = jsonl_buffer.migrate_legacy_buffer()
+    if migrated:
+        logger.info("[COLLECTOR STARTUP] migrated_spool_lagoons=%s", migrated)
 
     if len(plc_configs) == 1:
         run_one_plc(plc_configs[0], root_cfg)
         return
 
-    logger.info("MASTER: starting %s PLCs", len(plc_configs))
+    logger.info("[COLLECTOR STARTUP] workers=%s", len(plc_configs))
 
     with ThreadPoolExecutor(max_workers=len(plc_configs), thread_name_prefix="plc") as ex:
         futures = [ex.submit(run_one_plc, cfg, root_cfg) for cfg in plc_configs]
@@ -486,7 +578,7 @@ def main(config_path: str):
             try:
                 future.result()
             except Exception as exc:
-                logger.error("[THREAD ERROR] %s", exc)
+                logger.error("[COLLECTOR WORKER ERROR] err=%s", exc)
 
 
 if __name__ == "__main__":

@@ -1,11 +1,11 @@
-lagoon_id: "central_district_dubai"
+﻿lagoon_id: "central_district_dubai"
 source: rockwell
 poll_seconds: 1
 
 timezone: "Asia/Dubai" 
 
 backend:
-  url: "http://localhost:8000/ingest/scada"
+  url: "http://127.0.0.1:8090/ingest/scada"
 
 rockwell:
   ip: "192.168.19.10"
@@ -30,3 +30,5 @@ tags:
   VE244_ST: "VE244_ST"
   VE401_ST: "VE401_ST"
   VE402_ST: "VE402_ST"
+
+

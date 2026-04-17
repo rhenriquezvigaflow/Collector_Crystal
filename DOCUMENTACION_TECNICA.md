@@ -1,8 +1,8 @@
 # Documentacion Tecnica Operativa
 
-Guia operativa del collector para ejecucion y ajuste de performance.
+Guia de operacion, tuning y troubleshooting del collector.
 
-## 1. Comandos clave
+## Comandos clave
 
 Instalar dependencias:
 
@@ -16,7 +16,7 @@ Ejecutar una laguna:
 python main.py --config config\Ava_lagoons.yml
 ```
 
-Ejecutar modo multi-laguna:
+Ejecutar varias lagunas:
 
 ```powershell
 python main.py --config collectors.yml
@@ -28,102 +28,151 @@ Batch Windows:
 run_collector.bat
 ```
 
-## 2. Contrato minimo de configuracion
+## Contrato minimo de configuracion
 
-Campos requeridos por laguna:
+Campos base por laguna:
 
 - `lagoon_id`
 - `source` (`rockwell` o `siemens`)
 - `timezone` (IANA)
 - `tags`
 
-Campos por tipo:
-
-- Rockwell: `rockwell.ip`, `rockwell.slot` (opcional), `rockwell.timeout_sec` (opcional).
-- Siemens: `siemens.opc_server_url`, `siemens.timeout_sec` (opcional), `username/password` (opcionales).
-
 Campos backend:
 
 - `backend.url`
-- `backend.timeout_sec` (default 3)
-- `backend.pool_connections` (default 50)
-- `backend.pool_maxsize` (default 200)
-- `backend.send_events` (default false)
+- `backend.timeout_sec`
+- `backend.pool_connections`
+- `backend.pool_maxsize`
+- `backend.send_events`
 
 Campos runtime:
 
-- `runtime.send_queue_maxsize` (default 1000)
-- `runtime.send_queue_full_policy` (`drop_newest` | `drop_oldest` | `block`)
-- `runtime.spool_on_send_fail` (default true)
-- `runtime.startup_jitter_max_sec` (default `min(0.25, poll_seconds)`)
-- `runtime.log_every_n_cycles` (default 10)
-- `runtime.log_every_n_sends` (default 100)
-- `runtime.enable_state_events` (default true)
+- `runtime.send_queue_maxsize`
+- `runtime.send_queue_full_policy`
+- `runtime.spool_on_send_fail`
+- `runtime.replay_spool_batch_size`
+- `runtime.send_retry_attempts`
+- `runtime.send_retry_backoff_base_sec`
+- `runtime.send_retry_backoff_max_sec`
+- `runtime.startup_jitter_max_sec`
+- `runtime.log_every_n_cycles`
+- `runtime.log_every_n_sends`
+- `runtime.enable_state_events`
 
-## 3. Variables de entorno
+Campos Rockwell:
 
-- `COLLECTOR_API_KEY` se envia en header `X-Api-Key`.
+- `rockwell.ip`
+- `rockwell.slot`
+- `rockwell.timeout_sec`
+- `force_reconnect_every_sec`
+- `max_consecutive_fails`
 
-Sin API key, el sender no envia y retorna fallo.
+Campos Siemens:
 
-## 4. Formato de salida HTTP
+- `siemens.opc_server_url`
+- `siemens.timeout_sec`
+- `siemens.username`
+- `siemens.password`
 
-`POST {backend.url}`
+## Variables de entorno
 
-```json
-{
-  "lagoon_id": "costa_del_lago",
-  "source": "rockwell",
-  "timestamp": "2026-02-25T18:32:00.000000+00:00",
-  "tags": {
-    "PT117_R_SCADA": 10.2
-  }
-}
-```
+- `COLLECTOR_API_KEY`: obligatorio para el header `X-Api-Key`.
+- `COLLECTOR_SEND_ERROR_LOG_INTERVAL_SEC`: opcional, limita logs repetidos de fallo HTTP.
 
-Si `backend.send_events=true`, se agrega el arreglo `events` cuando hay eventos.
+## Tuning recomendado
 
-## 5. Senales de salud (logs)
+Si el backend esta lento:
 
-- `START source=<source> lagoon=<id> poll=<sec> queue=<n> policy=<policy>`
-- `OK source=<source> lagoon=<id> utc=<ts> local=<ts> tags=<n> events=<n> cycle=<ms> queue=<n> dropped=<n>`
-- `SEND lagoon=<id> sent=<n> failed=<n> queue=<n>`
-- `EMPTY source=<source> lagoon=<id>`
-- `ERR source=<source> lagoon=<id> err=<msg>`
+1. subir `backend.pool_maxsize`
+2. subir `runtime.send_queue_maxsize`
+3. habilitar `spool_on_send_fail`
+4. revisar `send_retry_attempts` y backoff
 
-## 6. Troubleshooting rapido
+Si hay bursts entre muchas lagunas:
 
-Error de conexion PLC:
+1. usar `startup_jitter_max_sec`
+2. revisar `poll_seconds`
+3. validar que no todas las lagunas arranquen con el mismo scheduler
 
-- Verificar IP/endpoint en YAML.
-- Validar conectividad de red desde el host.
-- Revisar credenciales Siemens si aplica.
+Si no quieres perder payloads por saturacion:
 
-No llega data al backend:
+- usar `send_queue_full_policy: block`
 
-- Verificar `backend.url`.
-- Verificar `COLLECTOR_API_KEY`.
-- Confirmar timeout (`backend.timeout_sec`) y saturacion de cola (`queue`, `dropped` en logs).
+Tradeoff:
 
-Cola creciendo o drops:
+- protege datos, pero puede frenar lectura PLC si el backend no responde.
 
-- Aumentar `runtime.send_queue_maxsize`.
-- Aumentar `backend.pool_maxsize`.
-- Revisar latencia/errores del backend.
-- En caso extremo, usar `runtime.send_queue_full_policy: block` para priorizar no perder datos (con riesgo de frenar lectura).
+## Eventos emitidos
 
-## 7. Buffer local
+Booleanos:
 
-- Archivo: `data/buffer.jsonl`.
-- Se escribe cuando hay fallo de envio o drop de cola y `runtime.spool_on_send_fail=true`.
-- Actualmente no hay replay automatico a backend.
+- requieren `event_tags`
+- producen `OPEN` y `CLOSE`
 
-## 8. Limites actuales conocidos
+Estados enteros:
 
-- `storage/pg_writer.py` sin implementacion.
-- No existe proceso de replay JSONL integrado.
+- requieren `enable_state_events=true`
+- ignoran booleanos
+- solo consideran enteros `0, 1, 2, 3`
+- producen `STATE_CHANGE`
 
-## 9. Referencias
+## Spool local
 
-- Arquitectura: `ARQUITECTURA.md`
-- Guia general: `README.md`
+Rutas:
+
+- vigente: `data/spool/<lagoon_id>.jsonl`
+- legacy: `data/buffer.jsonl`
+
+Comportamiento:
+
+- el legacy se migra automaticamente al arrancar
+- el replay ocurre en batches cuando la cola esta vacia
+- si un payload del spool vuelve a fallar, queda pendiente para el siguiente ciclo
+
+## Logs utiles
+
+- `[COLLECTOR START]`: confirma source, poll y politica de cola.
+- `[COLLECTOR CYCLE]`: muestra tags, eventos, queue y elapsed.
+- `[COLLECTOR EMPTY]`: indica ciclos sin datos.
+- `[COLLECTOR SEND STATS]`: agrega metricas de envio.
+- `[SPOOL REPLAY]`: confirma replay y pendientes restantes.
+- `[COLLECTOR WORKER ERROR]`: error fatal de una hebra lectora.
+
+## Troubleshooting rapido
+
+### No llega data al backend
+
+- revisar `backend.url`
+- revisar `COLLECTOR_API_KEY`
+- revisar timeout HTTP y reachability
+- revisar si aparecen archivos en `data/spool`
+
+### El spool crece y no baja
+
+- revisar conectividad al backend
+- revisar `send_retry_attempts`
+- revisar `backend.pool_maxsize`
+- revisar si la cola nunca queda vacia y por eso el replay no avanza
+
+### Rockwell falla de forma intermitente
+
+- bajar `force_reconnect_every_sec`
+- revisar `max_consecutive_fails`
+- confirmar `slot` e IP
+
+### Siemens devuelve vacio
+
+- validar `opc_server_url`
+- revisar credenciales si aplican
+- confirmar que los node ids del YAML siguen vigentes
+
+## Limitaciones conocidas
+
+- no existe proceso externo dedicado a replay
+- `pg_writer` no forma parte del flujo activo
+- el collector no hace deduplicacion de payloads: si el PLC envia cambio, el backend decide persistencia/eventos
+
+## Referencias
+
+- `README.md`
+- `ARQUITECTURA.md`

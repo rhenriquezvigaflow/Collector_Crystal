@@ -1,11 +1,11 @@
-lagoon_id: "ava_lagoons"
+﻿lagoon_id: "ava_lagoons"
 source: rockwell
 poll_seconds: 1
 
 timezone: "America/Mexico_City" 
 
 backend:
-  url: "http://localhost:8000/ingest/scada"
+  url: "http://127.0.0.1:8090/ingest/scada"
 
 rockwell:
   ip: "192.168.16.10"
@@ -24,3 +24,5 @@ tags:
   P007_STS_SCADA: "P007_STS_SCADA"
   RETRO_SCADA: "RETRO_SCADA"  
   
+
+

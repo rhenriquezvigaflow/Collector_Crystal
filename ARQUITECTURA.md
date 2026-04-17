@@ -1,117 +1,120 @@
 # Arquitectura - Collector Python
 
-Documento de arquitectura funcional basado en el codigo actual.
+Documento de arquitectura funcional alineado al codigo actual.
 
-## 1) Objetivo
+## Objetivo
 
-Recolectar datos SCADA desde PLCs y enviarlos por HTTP manteniendo fluidez con muchas lagunas (ej: 50) aun con latencia o fallos de backend.
+Leer telemetria SCADA desde PLCs, convertirla a un payload comun y entregarla al backend sin que la capa HTTP degrade el ritmo de lectura.
 
-## 2) Vista de alto nivel
+## Vista de alto nivel
 
 ```text
-Config YAML (single/master)
-        |
-        v
-     main.py
-        |
-        +--> 1 hilo lector por PLC (ThreadPoolExecutor)
-                 |
-                 +--> Reader Rockwell / Siemens
-                 +--> TotDeltaNormalizer
-                 +--> Event detectors (boolean/state)
-                 +--> Enqueue payload (cola local por laguna)
-                              |
-                              v
-                         1 hilo sender por laguna
-                              |
-                              +--> BackendSender (HTTP Session + pool)
-                              +--> (opcional) spool JSONL en fallos
+YAML single/master
+    |
+    v
+main.py
+    |
+    +--> 1 reader loop por PLC
+    |       |
+    |       +--> RockwellSessionReader | SiemensSessionReader
+    |       +--> TotDeltaNormalizer
+    |       +--> BooleanEventDetector / StateEventDetector
+    |       +--> enqueue payload
+    |
+    +--> 1 sender thread por laguna
+            |
+            +--> BackendSender
+            +--> send_with_retry
+            +--> spool JSONL por laguna
+            +--> replay del spool cuando la cola queda vacia
 ```
 
-## 3) Componentes y responsabilidades
+## Componentes
 
 | Componente | Archivo | Responsabilidad |
 |---|---|---|
-| Orquestador | `main.py` | Carga config, lanza 1 hilo por PLC, controla ritmo, cola y sender thread |
-| Reader Rockwell | `workers/get_rockwell.py` | Conexion persistente, lectura batch y mapeo optimizado de tags |
-| Reader Siemens | `workers/get_siemens.py` | Conexion OPC-UA, lectura batch `get_values`, reconexion |
-| Normalizador TOT | `normalizer/tot_delta_normalizer.py` | Convierte acumulado TOT a delta por ciclo |
-| Payload | `common/payload.py` | Modelo estandar de payload |
-| Sender HTTP | `common/sender.py` | POST con `requests.Session`, pool y `X-Api-Key` |
-| Buffer JSONL | `storage/jsonl_buffer.py` | Persistencia local thread-safe para fallos de envio |
-| Supervisor | `supervisor.py` | Reinicia `main.py` si el proceso cae |
+| Orquestador | `main.py` | Carga config, crea readers, cola, sender threads y scheduler |
+| Reader Rockwell | `workers/get_rockwell.py` | Conexion persistente, batch read, rotacion de conexion |
+| Reader Siemens | `workers/get_siemens.py` | Conexion OPC-UA, `get_values`, reconexion ante error |
+| Sender HTTP | `common/sender.py` | POST con `requests.Session`, pool y header `X-Api-Key` |
+| Spool/Replay | `storage/jsonl_buffer.py` | Persistencia por laguna, replay, migracion del buffer legacy |
+| Payload | `common/payload.py` | Modelo Pydantic del payload normalizado |
+| TOT delta | `normalizer/tot_delta_normalizer.py` | Calcula `WM01_TOT_DELTA_SCADA` |
+| Supervisor | `supervisor.py` | Reinicia `main.py` cuando el proceso cae |
 
-## 4) Flujo de ejecucion por ciclo
+## Flujo por ciclo
 
-1. `reader.read_once()` obtiene `raw_tags`.
-2. Se construye `tags = dict(raw_tags or {})`.
-3. Si existe `WM01_TOT_SCADA`, se calcula `WM01_TOT_DELTA_SCADA`.
-4. Se crea `NormalizedPayload` con timestamp UTC.
-5. Se detectan eventos:
-   - `BooleanEventDetector`: transiciones `False->True` (`OPEN`) y `True->False` (`CLOSE`).
-   - `StateEventDetector`: cambios de estado para enteros `0,1,2,3` (ignora boolean).
-6. El payload se encola para envio asincrono.
-7. El sender thread hace `POST`; si falla, opcionalmente escribe en `buffer.jsonl`.
-8. El loop lector duerme con scheduler de `next_tick` para mantener frecuencia.
+1. `load_plc_configs()` expande el master YAML y resuelve `include`.
+2. `run_one_plc()` crea el reader segun `source`.
+3. El reader hace `read_once()` y devuelve `tags`.
+4. Si viene `WM01_TOT_SCADA`, se agrega `WM01_TOT_DELTA_SCADA`.
+5. Se construye `NormalizedPayload` con timestamp UTC.
+6. Si hay `event_tags`, `BooleanEventDetector` genera `OPEN` y `CLOSE`.
+7. Si `enable_state_events=true`, `StateEventDetector` detecta cambios enteros `0..3`.
+8. El payload se encola segun la politica de cola.
+9. `sender_worker_loop()` intenta enviar:
+   - HTTP directo
+   - reintentos con backoff exponencial
+   - spool si sigue fallando
+10. Si la cola queda vacia, el sender intenta reprocesar `data/spool/<lagoon>.jsonl`.
 
-## 5) Modelo de concurrencia
+## Modelo de concurrencia
 
-- Modo single: un hilo lector + (si hay backend) un hilo sender.
-- Modo master: un hilo lector por PLC + un hilo sender por PLC.
-- Lectura y envio desacoplados por `Queue`, evitando que latencia HTTP bloquee PLC.
+- Single PLC:
+  - 1 reader loop.
+  - 1 sender thread si hay `backend.url`.
+- Multi PLC:
+  - 1 reader loop por PLC en `ThreadPoolExecutor`.
+  - 1 sender thread por laguna.
+- La cola por laguna desacopla PLC y backend.
 
-## 6) Integracion externa
+## Spool y replay
 
-- Protocolo: HTTP `POST`.
-- Header requerido: `X-Api-Key` desde `COLLECTOR_API_KEY`.
-- Body base:
-  - `lagoon_id`
-  - `source`
-  - `timestamp` (UTC ISO-8601)
-  - `tags`
-- `events` se incluye solo si `backend.send_events: true`.
+Formato vigente:
 
-## 7) Manejo de fallos
+- `data/spool/<lagoon_id>.jsonl`
+
+Compatibilidad:
+
+- Si existe `data/buffer.jsonl`, al arranque se migra al formato por laguna.
+
+Semantica:
+
+- `append_for_lagoon()` escribe de forma thread-safe.
+- `replay_for_lagoon()` mueve el archivo a `.work`, reintenta un batch y recompone pendientes.
+- El replay ocurre solo cuando la cola en memoria esta vacia para no competir con trafico fresco.
+
+## Manejo de fallos
 
 ### Rockwell
 
-- Reconecta por rotacion (`force_reconnect_every_sec`) o exceso de fallos (`max_consecutive_fails`).
-- Ante error de lectura devuelve `{}` y el loop continua.
+- Rota la conexion por tiempo (`force_reconnect_every_sec`).
+- Desconecta si supera `max_consecutive_fails`.
+- Devuelve `{}` ante error y el loop sigue vivo.
 
 ### Siemens
 
-- Si falla lectura OPC-UA, desconecta y reintenta en proximo ciclo.
-- La lectura es batch (un roundtrip de datos por ciclo).
+- Reconecta cuando falla `get_values`.
+- Mantiene cache de nodos para batch reads.
 
 ### Sender HTTP
 
-- Si el backend falla, el sender retorna `False`.
-- Si `runtime.spool_on_send_fail=true`, guarda payload en JSONL local.
+- Si falta `COLLECTOR_API_KEY`, no envia.
+- Usa `send_retry_attempts` antes de declarar fallo.
+- Si `spool_on_send_fail=true`, persiste el payload.
 - Si la cola se llena:
-  - `drop_newest`: descarta payload nuevo.
-  - `drop_oldest`: descarta el mas antiguo en cola.
-  - `block`: hace backpressure al lector.
+  - `drop_newest`: descarta el nuevo.
+  - `drop_oldest`: saca uno viejo y mete el nuevo.
+  - `block`: aplica backpressure al reader.
 
-## 8) Config de performance relevante
+## Decisiones clave
 
-- `backend.timeout_sec`
-- `backend.pool_connections`
-- `backend.pool_maxsize`
-- `runtime.send_queue_maxsize`
-- `runtime.send_queue_full_policy`
-- `runtime.spool_on_send_fail`
-- `runtime.startup_jitter_max_sec`
-- `runtime.log_every_n_cycles`
-- `runtime.log_every_n_sends`
-- `runtime.enable_state_events`
+- Timestamps del payload siempre en UTC.
+- La timezone por laguna se usa para logging y observabilidad.
+- Los eventos viajan en el mismo payload solo si `backend.send_events=true`.
+- El scheduler usa `next_tick` para limitar drift cuando el host puede sostener la frecuencia.
 
-## 9) Decisiones tecnicas clave
+## Deuda tecnica
 
-- Timestamp enviado en UTC; timezone de laguna se usa para observabilidad local en logs.
-- Se usa `requests.Session` para keep-alive y menor costo por request.
-- Se introdujo jitter inicial para evitar burst sincronizado entre lagunas.
-
-## 10) Deuda tecnica pendiente
-
-- `storage/pg_writer.py` sin implementacion.
-- Falta componente de replay automatico del `buffer.jsonl`.
+- No hay pipeline separado para drenar spool desde otro proceso.
+- `storage/pg_writer.py` no participa del flujo productivo actual.

@@ -1,4 +1,4 @@
-lagoon_id: "laguna_santa_rosalia"
+﻿lagoon_id: "laguna_santa_rosalia"
 source: rockwell
 poll_seconds: 1
 
@@ -6,7 +6,7 @@ timezone: "Europe/Madrid"
 
 
 backend:
-  url: "http://localhost:8000/ingest/scada"
+  url: "http://127.0.0.1:8090/ingest/scada"
 
 rockwell:
   ip: "192.168.6.10"
@@ -28,4 +28,7 @@ tags:
   VE239_ST: "VE239_ST"                                                     
   VE238_ST: "VE238_ST"                                                     
   VE237_ST: "VE237_ST"                                                     
+
+
+
 

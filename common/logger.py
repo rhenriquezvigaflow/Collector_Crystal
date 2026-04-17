@@ -1,24 +1,37 @@
+from __future__ import annotations
+
 import logging
 import os
+from logging.handlers import RotatingFileHandler
 
-def get_logger():
+LOG_FILE_PATH = os.getenv("COLLECTOR_LOG_FILE_PATH", "logs/collector.log")
+LOG_MAX_BYTES = int(os.getenv("COLLECTOR_LOG_MAX_BYTES", "10485760"))
+LOG_BACKUP_COUNT = int(os.getenv("COLLECTOR_LOG_BACKUP_COUNT", "5"))
+LOG_LEVEL = os.getenv("COLLECTOR_LOG_LEVEL", "INFO").strip().upper()
+
+
+def get_logger(name: str = "collector"):
     os.makedirs("logs", exist_ok=True)
 
-    logger = logging.getLogger("collector")
-    logger.setLevel(logging.INFO)
+    logger = logging.getLogger(name)
+    logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
 
-    formatter = logging.Formatter(
-        "%(asctime)s | %(levelname)s | %(message)s"
-    )
+    formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
 
     if not logger.handlers:
-        fh = logging.FileHandler("logs/collector.log", encoding="utf-8")
-        fh.setFormatter(formatter)
+        file_handler = RotatingFileHandler(
+            LOG_FILE_PATH,
+            maxBytes=LOG_MAX_BYTES,
+            backupCount=LOG_BACKUP_COUNT,
+            encoding="utf-8",
+        )
+        file_handler.setFormatter(formatter)
 
-        sh = logging.StreamHandler()
-        sh.setFormatter(formatter)
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
 
-        logger.addHandler(fh)
-        logger.addHandler(sh)
+        logger.addHandler(file_handler)
+        logger.addHandler(stream_handler)
+        logger.propagate = False
 
     return logger

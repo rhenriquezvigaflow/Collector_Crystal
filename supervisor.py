@@ -4,11 +4,13 @@ import sys
 import os
 
 from dotenv import load_dotenv
+from common.logger import get_logger
 load_dotenv()
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PYTHON = sys.executable
+logger = get_logger("collector.supervisor")
 
 CONFIG = os.path.join(BASE_DIR, "collectors.yml")
 
@@ -19,8 +21,8 @@ CMD = [
     CONFIG,
 ]
 
-print("[SUPERVISOR] Starting collector")
-print("[SUPERVISOR] CMD:", " ".join(CMD))
+logger.info("Starting collector supervisor")
+logger.info("Command: %s", " ".join(CMD))
 
 while True:
     try:
@@ -28,15 +30,15 @@ while True:
             CMD,
             env=os.environ.copy(),  
         )
-        print("[SUPERVISOR] Collector running (pid=%s)" % proc.pid)
+        logger.info("Collector running pid=%s", proc.pid)
 
         proc.wait()
 
-        print("[SUPERVISOR] Collector exited, restarting in 5s...")
+        logger.warning("Collector stopped, restarting in 5s")
         time.sleep(5)
 
     except KeyboardInterrupt:
-        print("[SUPERVISOR] Stopping supervisor")
+        logger.info("Stopping collector supervisor")
         try:
             proc.terminate()
         except Exception:
@@ -44,5 +46,5 @@ while True:
         break
 
     except Exception as e:
-        print("[SUPERVISOR] ERROR:", e)
+        logger.error("Supervisor error: %s", e)
         time.sleep(5)

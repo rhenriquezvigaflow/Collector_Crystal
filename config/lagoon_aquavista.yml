@@ -1,4 +1,4 @@
-lagoon_id: "aquavista"
+﻿lagoon_id: "aquavista"
 source: siemens
 poll_seconds: 1
 
@@ -6,7 +6,7 @@ force_reconnect_every_sec: 3600
 max_consecutive_fails: 10
 
 backend:
-  url: "http://localhost:8000/ingest/scada"
+  url: "http://127.0.0.1:8090/ingest/scada"
 
 
 timezone: "America/Mexico_City" 
@@ -18,9 +18,11 @@ siemens:
   # username: "user"
   # password: "pass"
 
-# keys lógicas 
+# keys logicas 
 tags:
   Tags_01_Real: "ns=4;i=3"
   Tags_02_Real: "ns=4;i=4"
   Tags_03_Real: "ns=4;i=5"
   Tags_04_Real: "ns=4;i=18"
+
+

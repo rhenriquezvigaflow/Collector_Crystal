@@ -1,10 +1,10 @@
-import logging
 from typing import Any
 
+from common.logger import get_logger
 from opcua import Client
 from opcua.ua.uaerrors import UaError
 
-logger = logging.getLogger("siemens_reader")
+logger = get_logger("collector.siemens")
 
 
 class SiemensSessionReader:
@@ -69,10 +69,10 @@ class SiemensSessionReader:
             raw_values = self.client.get_values(self._nodes_in_order)
             return {tag_id: value for tag_id, value in zip(self._tag_ids, raw_values)}
         except UaError as exc:
-            logger.warning("UaError reading Siemens endpoint=%s err=%s", self.endpoint, exc)
+            logger.warning("Siemens read failed endpoint=%s err=%s", self.endpoint, exc)
             self.disconnect()
             return {}
         except Exception as exc:
-            logger.error("Unexpected Siemens read error endpoint=%s err=%s", self.endpoint, exc)
+            logger.error("Siemens read crashed endpoint=%s err=%s", self.endpoint, exc)
             self.disconnect()
             return {}
