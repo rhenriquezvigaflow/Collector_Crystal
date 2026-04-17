@@ -1,11 +1,14 @@
 backend:
   url: "http://127.0.0.1:8090/ingest/scada"
+  pool_connections: 2
+  pool_maxsize: 4
 
 runtime:
-  send_queue_maxsize: 1000
+  send_queue_maxsize: 100
   send_queue_full_policy: "drop_newest"
   spool_on_send_fail: true
-  replay_spool_batch_size: 50
+  replay_spool_batch_size: 10
+  max_replay_payload_age_sec: 900
   send_retry_attempts: 2
   send_retry_backoff_base_sec: 1
   send_retry_backoff_max_sec: 8

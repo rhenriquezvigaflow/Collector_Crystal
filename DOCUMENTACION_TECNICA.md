@@ -51,6 +51,7 @@ Campos runtime:
 - `runtime.send_queue_full_policy`
 - `runtime.spool_on_send_fail`
 - `runtime.replay_spool_batch_size`
+- `runtime.max_replay_payload_age_sec`
 - `runtime.send_retry_attempts`
 - `runtime.send_retry_backoff_base_sec`
 - `runtime.send_retry_backoff_max_sec`
@@ -87,6 +88,13 @@ Si el backend esta lento:
 2. subir `runtime.send_queue_maxsize`
 3. habilitar `spool_on_send_fail`
 4. revisar `send_retry_attempts` y backoff
+
+Si quieres priorizar memoria y datos frescos:
+
+1. bajar `runtime.send_queue_maxsize`
+2. bajar `runtime.replay_spool_batch_size`
+3. ajustar `runtime.max_replay_payload_age_sec` para descartar backlog demasiado viejo
+4. mantener `send_queue_full_policy: drop_newest` para spool seguro
 
 Si hay bursts entre muchas lagunas:
 
@@ -127,6 +135,8 @@ Comportamiento:
 
 - el legacy se migra automaticamente al arrancar
 - el replay ocurre en batches cuando la cola esta vacia
+- el replay es streaming y no carga el spool completo en memoria
+- si `max_replay_payload_age_sec > 0`, descarta payloads demasiado antiguos durante el replay
 - si un payload del spool vuelve a fallar, queda pendiente para el siguiente ciclo
 
 ## Logs utiles
@@ -152,6 +162,7 @@ Comportamiento:
 - revisar conectividad al backend
 - revisar `send_retry_attempts`
 - revisar `backend.pool_maxsize`
+- revisar `max_replay_payload_age_sec`
 - revisar si la cola nunca queda vacia y por eso el replay no avanza
 
 ### Rockwell falla de forma intermitente

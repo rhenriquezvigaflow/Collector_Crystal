@@ -61,17 +61,18 @@ poll_seconds: 1
 timezone: "America/Mexico_City"
 
 backend:
-  url: "http://localhost:8000/ingest/scada"
+  url: "http://127.0.0.1:8090/ingest/scada"
   timeout_sec: 3
-  pool_connections: 50
-  pool_maxsize: 200
+  pool_connections: 2
+  pool_maxsize: 4
   send_events: true
 
 runtime:
-  send_queue_maxsize: 1000
+  send_queue_maxsize: 100
   send_queue_full_policy: "drop_newest"
   spool_on_send_fail: true
-  replay_spool_batch_size: 50
+  replay_spool_batch_size: 10
+  max_replay_payload_age_sec: 900
   send_retry_attempts: 2
   send_retry_backoff_base_sec: 1.0
   send_retry_backoff_max_sec: 8.0
@@ -95,12 +96,16 @@ event_tags:
 
 ```yaml
 backend:
-  url: "http://localhost:8000/ingest/scada"
+  url: "http://127.0.0.1:8090/ingest/scada"
+  pool_connections: 2
+  pool_maxsize: 4
 
 runtime:
-  send_queue_maxsize: 1000
+  send_queue_maxsize: 100
   send_queue_full_policy: "drop_newest"
   spool_on_send_fail: true
+  replay_spool_batch_size: 10
+  max_replay_payload_age_sec: 900
 
 plcs:
   - include: "config/lagoon_aquavista.yml"
@@ -114,6 +119,7 @@ plcs:
 - `send_queue_full_policy`: `drop_newest`, `drop_oldest` o `block`.
 - `spool_on_send_fail`: persiste payloads fallidos a disco.
 - `replay_spool_batch_size`: cuantos payloads del spool intenta reprocesar por tanda.
+- `max_replay_payload_age_sec`: descarta backlog demasiado viejo durante el replay.
 - `send_retry_attempts`: reintentos HTTP por payload antes de spooling.
 - `send_retry_backoff_base_sec` y `send_retry_backoff_max_sec`: backoff exponencial.
 - `startup_jitter_max_sec`: evita bursts sincronizados entre lagunas.
@@ -202,6 +208,7 @@ Mensajes relevantes:
 
 - `storage/pg_writer.py` sigue sin uso productivo.
 - El spool es JSONL local; no hay servicio separado de replay externo.
+- El replay es streaming: no carga el spool completo en memoria antes de reprocesarlo.
 - La precision del scheduler depende del host y del tiempo de lectura del PLC.
 
 ## Documentacion relacionada

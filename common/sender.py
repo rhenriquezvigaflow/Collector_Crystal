@@ -18,8 +18,8 @@ class BackendSender:
         url: str,
         timeout: float = 3.0,
         send_events: bool = False,
-        pool_connections: int = 50,
-        pool_maxsize: int = 200,
+        pool_connections: int = 2,
+        pool_maxsize: int = 4,
     ):
         self.url = url
         self.timeout = timeout

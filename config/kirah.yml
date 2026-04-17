@@ -6,7 +6,7 @@ timezone: "America/Mexico_City"
 
 
 backend:
-  url: "http://localhost:8000/ingest/scada"
+  url: "http://127.0.0.1:8090/ingest/scada"
 
 rockwell:
   ip: "192.168.22.10"
@@ -27,4 +27,4 @@ tags:
   RETRO_SCADA : "RETRO_SCADA"
   P017_STS : "P017_STS"
   P016_STS : "P016_STS"
-  P015_STS : "P015_STS"        
+  P015_STS : "P015_STS"

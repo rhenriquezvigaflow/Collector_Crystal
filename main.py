@@ -5,6 +5,7 @@ import random
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from queue import Empty, Full, Queue
 from typing import Any, Dict
 from zoneinfo import ZoneInfo
@@ -203,8 +204,8 @@ def get_backend_sender(cfg: dict, root_cfg: dict) -> BackendSender | None:
         url=backend_url,
         timeout=float(backend_cfg.get("timeout_sec", 3.0)),
         send_events=as_bool(backend_cfg.get("send_events", False), False),
-        pool_connections=int(backend_cfg.get("pool_connections", 50)),
-        pool_maxsize=int(backend_cfg.get("pool_maxsize", 200)),
+        pool_connections=int(backend_cfg.get("pool_connections", 2)),
+        pool_maxsize=int(backend_cfg.get("pool_maxsize", 4)),
     )
 
 
@@ -248,14 +249,53 @@ def send_with_retry(
     return False
 
 
+def parse_payload_timestamp(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return None
+        if raw.endswith("Z"):
+            raw = f"{raw[:-1]}+00:00"
+        try:
+            parsed = datetime.fromisoformat(raw)
+        except ValueError:
+            return None
+    else:
+        return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def should_drop_replay_payload(payload: dict[str, Any], max_payload_age_sec: int) -> bool:
+    if max_payload_age_sec <= 0:
+        return False
+
+    payload_ts = parse_payload_timestamp(payload.get("timestamp"))
+    if payload_ts is None:
+        return False
+
+    payload_age_sec = (utc_now() - payload_ts).total_seconds()
+    return payload_age_sec > max_payload_age_sec
+
+
 def replay_spool(
     lagoon_id: str,
     sender: BackendSender,
     replay_batch_size: int,
+    max_replay_payload_age_sec: int,
 ) -> tuple[int, int, int]:
+    def _send_or_requeue(payload: dict[str, Any]) -> str:
+        if should_drop_replay_payload(payload, max_replay_payload_age_sec):
+            return "drop"
+        return "sent" if sender.send(payload) else "keep"
+
     return jsonl_buffer.replay_for_lagoon(
         lagoon_id=lagoon_id,
-        send_payload=sender.send,
+        send_payload=_send_or_requeue,
         max_items=max(1, replay_batch_size),
     )
 
@@ -292,6 +332,7 @@ def sender_worker_loop(
     spool_on_fail: bool,
     log_every_n_sends: int,
     replay_batch_size: int,
+    max_replay_payload_age_sec: int,
     retry_attempts: int,
     retry_backoff_base_sec: float,
     retry_backoff_max_sec: float,
@@ -305,6 +346,7 @@ def sender_worker_loop(
                 lagoon_id=lagoon_id,
                 sender=sender,
                 replay_batch_size=replay_batch_size,
+                max_replay_payload_age_sec=max_replay_payload_age_sec,
             )
             if replayed or dropped_spool:
                 logger.info(
@@ -377,7 +419,7 @@ def run_one_plc(cfg: dict, root_cfg: dict):
     sender = get_backend_sender(cfg, root_cfg)
     send_queue: Queue | None = None
 
-    send_queue_maxsize = int(get_runtime_option(cfg, root_cfg, "send_queue_maxsize", 1000))
+    send_queue_maxsize = int(get_runtime_option(cfg, root_cfg, "send_queue_maxsize", 100))
     send_queue_maxsize = max(1, send_queue_maxsize)
     send_queue_full_policy = str(
         get_runtime_option(cfg, root_cfg, "send_queue_full_policy", "drop_newest")
@@ -394,7 +436,10 @@ def run_one_plc(cfg: dict, root_cfg: dict):
     log_every_n_cycles = int(get_runtime_option(cfg, root_cfg, "log_every_n_cycles", 10))
     log_every_n_sends = int(get_runtime_option(cfg, root_cfg, "log_every_n_sends", 100))
     replay_batch_size = int(
-        get_runtime_option(cfg, root_cfg, "replay_spool_batch_size", 50)
+        get_runtime_option(cfg, root_cfg, "replay_spool_batch_size", 10)
+    )
+    max_replay_payload_age_sec = int(
+        get_runtime_option(cfg, root_cfg, "max_replay_payload_age_sec", 900)
     )
     retry_attempts = int(
         get_runtime_option(cfg, root_cfg, "send_retry_attempts", 2)
@@ -422,6 +467,7 @@ def run_one_plc(cfg: dict, root_cfg: dict):
                 spool_on_send_fail,
                 log_every_n_sends,
                 replay_batch_size,
+                max_replay_payload_age_sec,
                 retry_attempts,
                 retry_backoff_base_sec,
                 retry_backoff_max_sec,
@@ -464,12 +510,14 @@ def run_one_plc(cfg: dict, root_cfg: dict):
         time.sleep(startup_jitter)
 
     logger.info(
-        "[COLLECTOR START] lagoon=%s source=%s poll=%.2fs queue=%s policy=%s",
+        "[COLLECTOR START] lagoon=%s source=%s poll=%.2fs queue=%s policy=%s replay_batch=%s replay_max_age_sec=%s",
         lagoon_id,
         source,
         poll,
         send_queue_maxsize if send_queue else 0,
         send_queue_full_policy if send_queue else "disabled",
+        replay_batch_size if send_queue else 0,
+        max_replay_payload_age_sec if send_queue else 0,
     )
 
     cycle_count = 0

@@ -57,6 +57,7 @@ main.py
    - reintentos con backoff exponencial
    - spool si sigue fallando
 10. Si la cola queda vacia, el sender intenta reprocesar `data/spool/<lagoon>.jsonl`.
+11. El replay se hace en streaming y puede descartar payloads viejos segun `max_replay_payload_age_sec`.
 
 ## Modelo de concurrencia
 
@@ -82,6 +83,7 @@ Semantica:
 
 - `append_for_lagoon()` escribe de forma thread-safe.
 - `replay_for_lagoon()` mueve el archivo a `.work`, reintenta un batch y recompone pendientes.
+- El replay no carga el archivo completo a RAM; procesa linea por linea.
 - El replay ocurre solo cuando la cola en memoria esta vacia para no competir con trafico fresco.
 
 ## Manejo de fallos
@@ -102,6 +104,7 @@ Semantica:
 - Si falta `COLLECTOR_API_KEY`, no envia.
 - Usa `send_retry_attempts` antes de declarar fallo.
 - Si `spool_on_send_fail=true`, persiste el payload.
+- Si `max_replay_payload_age_sec > 0`, el replay puede descartar backlog demasiado viejo.
 - Si la cola se llena:
   - `drop_newest`: descarta el nuevo.
   - `drop_oldest`: saca uno viejo y mete el nuevo.
