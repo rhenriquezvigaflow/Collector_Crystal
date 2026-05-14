@@ -5,6 +5,7 @@ Collector SCADA en Python para leer tags desde PLCs Rockwell o Siemens y publica
 ## Estado actual
 
 - Soporta modo single PLC y modo multi-laguna usando un archivo master con `plcs[].include`.
+- El master `collectors.yml` incluye actualmente `ary.yml` ademas de las lagunas existentes.
 - Mantiene una hebra lectora por PLC y, cuando hay backend configurado, una hebra sender por laguna.
 - Desacopla lectura y envio con `Queue`, para que la latencia HTTP no bloquee el ciclo del PLC.
 - Normaliza `WM01_TOT_SCADA` a `WM01_TOT_DELTA_SCADA`.
@@ -111,7 +112,28 @@ plcs:
   - include: "config/lagoon_aquavista.yml"
   - include: "config/lagoon_costadellago.yml"
   - include: "config/Ava_lagoons.yml"
+  - include: "config/santa_rosalia.yml"
+  - include: "config/central_hub_dubai.yml"
+  - include: "config/kirah.yml"
+  - include: "config/ary.yml"
 ```
+
+## Laguna ARY
+
+Configuracion actual:
+
+- archivo: `config/ary.yml`
+- `lagoon_id`: `ary`
+- `source`: `rockwell`
+- timezone: `Asia/Karachi`
+- PLC: `192.168.18.10`, slot `0`
+
+Tags principales:
+
+- `PT114_R`, `PT117_R`, `PT119_R`
+- `FIT002_R`, `WM01_TOT`
+- `P005_ST`, `P006_ST`, `P007_ST`, `P008_ST`, `P009_ST`
+- `VE237_ST`, `VE238_ST`, `VE239_ST`, `VE240_ST`, `VE244_ST`, `VE246_ST`, `VE252_ST`
 
 ## Opciones de runtime importantes
 

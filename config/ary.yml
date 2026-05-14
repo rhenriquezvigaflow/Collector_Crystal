@@ -1,0 +1,42 @@
+﻿lagoon_id: "ary"
+source: rockwell
+poll_seconds: 1
+
+timezone: "Asia/Karachi" 
+
+
+backend:
+  url: "http://127.0.0.1:8090/ingest/scada"
+
+rockwell:
+  ip: "192.168.18.10"
+  slot: 0
+
+tags:
+  PT114_R: "PT114_R"
+  PT117_R: "PT117_R"
+  PT119_R: "PT119_R"
+  WM01_TOT: "WM01_TOT"
+  FIT002_R: "FIT002_R"
+  BACKWASH.DIFF_PRES: "BACKWASH.DIFF_PRES"
+  P005_ST: "P005_ST"
+  P006_ST: "P006_ST"
+  P009_ST: "P009_ST"
+  P007_ST: "P007_ST"
+  P008_ST: "P008_ST"
+  VE237_ST: "VE237_ST"
+  VE238_ST: "VE238_ST"
+  VE239_ST: "VE239_ST"
+  VE240_ST: "VE240_ST"
+  VE244_ST: "VE244_ST"
+  VE246_ST: "VE246_ST"
+  VE252_ST: "VE252_ST"
+  LSL001.ESTADO: "LSL001.ESTADO"
+  LSH002.ESTADO: "LSH002.ESTADO"
+  LSL004.ESTADO: "LSL004.ESTADO"
+  LSM006.ESTADO: "LSM006.ESTADO"
+  LSH005.ESTADO: "LSH005.ESTADO"
+
+
+
+

@@ -2,6 +2,8 @@
 
 Guia de operacion, tuning y troubleshooting del collector.
 
+**Actualizado:** 2026-04-27
+
 ## Comandos clave
 
 Instalar dependencias:
@@ -21,6 +23,8 @@ Ejecutar varias lagunas:
 ```powershell
 python main.py --config collectors.yml
 ```
+
+El master actual incluye, entre otras, la laguna `ary` desde `config/ary.yml`.
 
 Batch Windows:
 

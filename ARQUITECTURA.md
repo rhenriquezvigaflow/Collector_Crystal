@@ -2,6 +2,8 @@
 
 Documento de arquitectura funcional alineado al codigo actual.
 
+**Actualizado:** 2026-04-27
+
 ## Objetivo
 
 Leer telemetria SCADA desde PLCs, convertirla a un payload comun y entregarla al backend sin que la capa HTTP degrade el ritmo de lectura.
@@ -116,6 +118,18 @@ Semantica:
 - La timezone por laguna se usa para logging y observabilidad.
 - Los eventos viajan en el mismo payload solo si `backend.send_events=true`.
 - El scheduler usa `next_tick` para limitar drift cuando el host puede sostener la frecuencia.
+
+## Configuraciones Incluidas en el Master
+
+`collectors.yml` incluye actualmente:
+
+- `config/lagoon_aquavista.yml`
+- `config/lagoon_costadellago.yml`
+- `config/Ava_lagoons.yml`
+- `config/santa_rosalia.yml`
+- `config/central_hub_dubai.yml`
+- `config/kirah.yml`
+- `config/ary.yml`
 
 ## Deuda tecnica
 

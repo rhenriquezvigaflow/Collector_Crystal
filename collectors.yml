@@ -18,5 +18,7 @@ plcs:
   - include: "config/lagoon_costadellago.yml"
   - include: "config/Ava_lagoons.yml"
   - include: "config/santa_rosalia.yml"
-  - include: "config/central_district_dubai.yml"
+  - include: "config/central_hub_dubai.yml"
   - include: "config/kirah.yml"
+  - include: "config/ary.yml"
+  - include: "config/nyah.yml"
