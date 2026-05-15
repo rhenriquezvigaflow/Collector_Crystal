@@ -1,8 +1,12 @@
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
 .venv/
 venv/
 logs/
+*.log
 data/spool/
 data/*.jsonl
 .env
