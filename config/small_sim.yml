@@ -1,0 +1,16 @@
+lagoon_id: "small_sim"
+product_type: "small"
+source: simulator
+poll_seconds: 1
+timezone: "America/Santiago"
+
+backend:
+  url: "http://127.0.0.1:8090/ingest/scada"
+
+tags:
+  "PT-123": 1.4
+  "AE-100": 650
+  "AE-022": 7.2
+  TEMP: 28.4
+  ORP: 650
+  Dosif: 1.25

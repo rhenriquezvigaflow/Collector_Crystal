@@ -3,6 +3,8 @@ backend:
   pool_connections: 2
   pool_maxsize: 4
 
+product_type: "crystal"
+
 runtime:
   send_queue_maxsize: 100
   send_queue_full_policy: "drop_newest"
@@ -22,3 +24,5 @@ plcs:
   - include: "config/kirah.yml"
   - include: "config/ary.yml"
   - include: "config/nyah.yml"
+  - include: "config/small_sim.yml"
+    product_type: "small"

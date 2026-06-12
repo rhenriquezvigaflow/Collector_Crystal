@@ -1,10 +1,12 @@
 # Collector Python - Crystal Lagoons
 
-Collector SCADA en Python para leer tags desde PLCs Rockwell o Siemens y publicar telemetria al backend por HTTP.
+Collector SCADA en Python para leer tags desde PLCs Rockwell, Siemens o simulador local y publicar telemetria al backend por HTTP.
 
 ## Estado actual
 
 - Soporta modo single PLC y modo multi-laguna usando un archivo master con `plcs[].include`.
+- Soporta `product_type` por laguna (`crystal` o `small`) para integracion con rutas productizadas.
+- Incluye `source: simulator` para pruebas SmallLagoons sin PLC fisico.
 - El master `collectors.yml` incluye actualmente `ary.yml` ademas de las lagunas existentes.
 - Mantiene una hebra lectora por PLC y, cuando hay backend configurado, una hebra sender por laguna.
 - Desacopla lectura y envio con `Queue`, para que la latencia HTTP no bloquee el ciclo del PLC.
@@ -18,8 +20,10 @@ Collector SCADA en Python para leer tags desde PLCs Rockwell o Siemens y publica
 ## Estructura importante
 
 - `main.py`: orquestacion, carga YAML, readers, queue y sender threads.
+- `common/config.py`: carga master/include y resuelve `product_type`.
 - `workers/get_rockwell.py`: lectura batch de tags Rockwell.
 - `workers/get_siemens.py`: lectura batch OPC-UA para Siemens.
+- `workers/get_simulator.py`: reader local para valores fijos o aleatorios.
 - `common/sender.py`: cliente HTTP con `X-Api-Key` y pool de conexiones.
 - `storage/jsonl_buffer.py`: spool, replay y migracion del buffer legacy.
 - `normalizer/tot_delta_normalizer.py`: calcula delta del tag TOT.
@@ -57,6 +61,7 @@ Variable opcional:
 
 ```yaml
 lagoon_id: "aquavista"
+product_type: "crystal"   # crystal | small
 source: "siemens"
 poll_seconds: 1
 timezone: "America/Mexico_City"
@@ -101,6 +106,8 @@ backend:
   pool_connections: 2
   pool_maxsize: 4
 
+product_type: "crystal"   # valor por defecto para includes sin override
+
 runtime:
   send_queue_maxsize: 100
   send_queue_full_policy: "drop_newest"
@@ -111,11 +118,60 @@ runtime:
 plcs:
   - include: "config/lagoon_aquavista.yml"
   - include: "config/lagoon_costadellago.yml"
+  - include: "config/small_sim.yml"
+    product_type: "small"
   - include: "config/Ava_lagoons.yml"
   - include: "config/santa_rosalia.yml"
   - include: "config/central_hub_dubai.yml"
   - include: "config/kirah.yml"
   - include: "config/ary.yml"
+```
+
+`product_type` se resuelve por prioridad: override del entry `plcs[]`, valor en la
+laguna incluida, valor global del master, y finalmente `crystal`. Los valores validos
+son `crystal` y `small`; cualquier otro valor detiene el worker al arrancar.
+
+### Simulador SmallLagoons
+
+El archivo `config/small_sim.yml` define una laguna Small simulada con `source:
+simulator`. Los tags pueden venir como valores fijos en `tags` o como specs aleatorias
+en `simulator.tags`. Se envian al mismo endpoint productivo:
+
+```powershell
+python main.py --config config\small_sim.yml
+```
+
+Tags incluidos:
+
+- `PT-123`
+- `AE-100`
+- `AE-022`
+- `TEMP`
+- `ORP`
+- `Dosif`
+
+Ejemplo con specs aleatorias:
+
+```yaml
+lagoon_id: "small_sim_random"
+product_type: "small"
+source: simulator
+
+simulator:
+  seed: 1
+  tags:
+    TEMP:
+      type: float
+      min: 24
+      max: 31
+      decimals: 1
+    ORP:
+      type: int
+      min: 550
+      max: 750
+    MODE:
+      type: choice
+      values: ["AUTO", "MANUAL"]
 ```
 
 ## Laguna ARY
@@ -187,6 +243,7 @@ Base:
 ```json
 {
   "lagoon_id": "ava_lagoons",
+  "product_type": "crystal",
   "source": "rockwell",
   "timestamp": "2026-04-17T14:32:00+00:00",
   "tags": {
@@ -237,3 +294,4 @@ Mensajes relevantes:
 
 - `ARQUITECTURA.md`: arquitectura y flujos.
 - `DOCUMENTACION_TECNICA.md`: operacion, tuning y troubleshooting.
+- `GUIA_NUEVA_LAGUNA.md`: alta de una laguna en el collector.

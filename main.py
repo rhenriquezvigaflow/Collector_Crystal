@@ -1,6 +1,5 @@
 import argparse
 import logging
-import os
 import random
 import threading
 import time
@@ -10,9 +9,9 @@ from queue import Empty, Full, Queue
 from typing import Any, Dict
 from zoneinfo import ZoneInfo
 
-import yaml
 from dotenv import load_dotenv
 
+from common.config import load_plc_configs, resolve_product_type
 from common.logger import get_logger
 from common.payload import NormalizedPayload
 from common.sender import BackendSender
@@ -21,6 +20,7 @@ from normalizer.tot_delta_normalizer import TotDeltaNormalizer
 from storage import jsonl_buffer
 from workers.get_rockwell import RockwellSessionReader
 from workers.get_siemens import SiemensSessionReader
+from workers.get_simulator import SimulatedTagReader
 
 load_dotenv()
 
@@ -130,35 +130,6 @@ class StateEventDetector:
             self.last_states[key] = raw_value
 
         return events
-
-
-def load_config(path: str) -> dict:
-    with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
-
-
-def resolve_path(base_file: str, maybe_relative: str) -> str:
-    if os.path.isabs(maybe_relative):
-        return maybe_relative
-    base_dir = os.path.dirname(os.path.abspath(base_file))
-    return os.path.join(base_dir, maybe_relative)
-
-
-def load_plc_configs(config_path: str) -> tuple[list[dict], dict]:
-    root = load_config(config_path)
-
-    if "plcs" not in root:
-        return [root], root
-
-    plc_configs: list[dict] = []
-    for entry in root["plcs"]:
-        if "include" in entry:
-            included_path = resolve_path(config_path, entry["include"])
-            plc_configs.append(load_config(included_path))
-        else:
-            plc_configs.append(entry)
-
-    return plc_configs, root
 
 
 def as_bool(value: Any, default: bool = False) -> bool:
@@ -401,6 +372,7 @@ def sender_worker_loop(
 
 def run_one_plc(cfg: dict, root_cfg: dict):
     lagoon_id = cfg["lagoon_id"]
+    product_type = resolve_product_type(cfg, root_cfg)
     source = str(cfg["source"]).strip().lower()
     poll = float(cfg.get("poll_seconds", 1))
     if poll <= 0:
@@ -502,6 +474,12 @@ def run_one_plc(cfg: dict, root_cfg: dict):
             username=siemens_cfg.get("username"),
             password=siemens_cfg.get("password"),
         )
+    elif source == "simulator":
+        simulator_cfg = cfg.get("simulator") or {}
+        reader = SimulatedTagReader(
+            tag_specs=simulator_cfg.get("tags") or cfg.get("tags") or {},
+            seed=simulator_cfg.get("seed"),
+        )
     else:
         raise ValueError(f"Unsupported source: {source}")
 
@@ -510,8 +488,9 @@ def run_one_plc(cfg: dict, root_cfg: dict):
         time.sleep(startup_jitter)
 
     logger.info(
-        "[COLLECTOR START] lagoon=%s source=%s poll=%.2fs queue=%s policy=%s replay_batch=%s replay_max_age_sec=%s",
+        "[COLLECTOR START] lagoon=%s product=%s source=%s poll=%.2fs queue=%s policy=%s replay_batch=%s replay_max_age_sec=%s",
         lagoon_id,
+        product_type,
         source,
         poll,
         send_queue_maxsize if send_queue else 0,
@@ -545,6 +524,7 @@ def run_one_plc(cfg: dict, root_cfg: dict):
 
             payload = NormalizedPayload(
                 lagoon_id=lagoon_id,
+                product_type=product_type,
                 source=source,
                 timestamp=timestamp_utc,
                 tags=tags,
@@ -587,8 +567,9 @@ def run_one_plc(cfg: dict, root_cfg: dict):
             queue_depth = send_queue.qsize() if send_queue else 0
             local_ts = timestamp_utc.astimezone(tz).isoformat()
             logger.debug(
-                "[COLLECTOR CYCLE] lagoon=%s source=%s tags=%s events=%s queue=%s dropped=%s elapsed=%.1fms utc=%s local=%s",
+                "[COLLECTOR CYCLE] lagoon=%s product=%s source=%s tags=%s events=%s queue=%s dropped=%s elapsed=%.1fms utc=%s local=%s",
                 lagoon_id,
+                product_type,
                 source,
                 len(tags),
                 len(all_events),

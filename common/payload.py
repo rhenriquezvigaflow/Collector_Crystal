@@ -14,6 +14,7 @@ class ScadaEvent(BaseModel):
 
 class NormalizedPayload(BaseModel):
     lagoon_id: str
+    product_type: Optional[str] = None
     source: str
     timestamp: datetime           
     tags: dict[str, Any]

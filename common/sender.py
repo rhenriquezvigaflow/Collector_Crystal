@@ -67,16 +67,20 @@ class BackendSender:
         if isinstance(payload, dict):
             body: dict[str, Any] = {
                 "lagoon_id": str(payload.get("lagoon_id", "")),
+                "product_type": payload.get("product_type"),
                 "source": payload.get("source"),
                 "timestamp": self._serialize_timestamp(payload.get("timestamp")),
                 "tags": payload.get("tags") or {},
             }
             if self.send_events and payload.get("events"):
                 body["events"] = self._serialize_events(payload["events"])
+            if body.get("product_type") is None:
+                body.pop("product_type", None)
             return body
 
         body = {
             "lagoon_id": str(payload.lagoon_id),
+            "product_type": payload.product_type,
             "source": payload.source,
             "timestamp": payload.timestamp.isoformat(),
             "tags": payload.tags,
@@ -84,6 +88,9 @@ class BackendSender:
 
         if self.send_events and payload.events:
             body["events"] = self._serialize_events(payload.events)
+
+        if body.get("product_type") is None:
+            body.pop("product_type", None)
 
         return body
 

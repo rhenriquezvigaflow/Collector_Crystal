@@ -2,7 +2,7 @@
 
 Guia de operacion, tuning y troubleshooting del collector.
 
-**Actualizado:** 2026-04-27
+**Actualizado:** 2026-06-12
 
 ## Comandos clave
 
@@ -24,7 +24,7 @@ Ejecutar varias lagunas:
 python main.py --config collectors.yml
 ```
 
-El master actual incluye, entre otras, la laguna `ary` desde `config/ary.yml`.
+El master actual incluye, entre otras, `ary`, `nyah` y `small_sim`.
 
 Batch Windows:
 
@@ -37,9 +37,23 @@ run_collector.bat
 Campos base por laguna:
 
 - `lagoon_id`
-- `source` (`rockwell` o `siemens`)
+- `product_type` (`crystal` o `small`; opcional si viene heredado del master)
+- `source` (`rockwell`, `siemens` o `simulator`)
 - `timezone` (IANA)
 - `tags`
+
+En modo master, `product_type` puede definirse globalmente o en cada `plcs[]`.
+El override dentro de `plcs[]` tiene prioridad sobre el archivo incluido.
+Ejemplo:
+
+```yaml
+product_type: "crystal"
+
+plcs:
+  - include: "config/lagoon_aquavista.yml"
+  - include: "config/small_sim.yml"
+    product_type: "small"
+```
 
 Campos backend:
 
@@ -79,9 +93,17 @@ Campos Siemens:
 - `siemens.username`
 - `siemens.password`
 
+Campos Simulator:
+
+- `simulator.seed`
+- `simulator.tags`
+
+Si `simulator.tags` no existe, el reader usa `tags`. Los valores pueden ser fijos o specs con `type: float|int|bool|choice|state`.
+
 ## Variables de entorno
 
 - `COLLECTOR_API_KEY`: obligatorio para el header `X-Api-Key`.
+- `COLLECTOR_LOG_LEVEL`: nivel de salida a consola (`INFO` por defecto).
 - `COLLECTOR_SEND_ERROR_LOG_INTERVAL_SEC`: opcional, limita logs repetidos de fallo HTTP.
 
 ## Tuning recomendado
@@ -181,6 +203,13 @@ Comportamiento:
 - revisar credenciales si aplican
 - confirmar que los node ids del YAML siguen vigentes
 
+### Small simulator no se ve en frontend
+
+- validar que `config/small_sim.yml` use `product_type: "small"`
+- ejecutar alta backend de `small_sim`
+- confirmar que los tags coincidan con `src/assets/positions/small_sim.json`
+- revisar `/api/small/lagoons` y `WS /ws/small/small_sim`
+
 ## Limitaciones conocidas
 
 - no existe proceso externo dedicado a replay
@@ -191,3 +220,4 @@ Comportamiento:
 
 - `README.md`
 - `ARQUITECTURA.md`
+- `GUIA_NUEVA_LAGUNA.md`

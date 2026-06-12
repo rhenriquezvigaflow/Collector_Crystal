@@ -2,7 +2,7 @@
 
 Documento de arquitectura funcional alineado al codigo actual.
 
-**Actualizado:** 2026-04-27
+**Actualizado:** 2026-06-12
 
 ## Objetivo
 
@@ -18,7 +18,7 @@ main.py
     |
     +--> 1 reader loop por PLC
     |       |
-    |       +--> RockwellSessionReader | SiemensSessionReader
+    |       +--> RockwellSessionReader | SiemensSessionReader | SimulatedTagReader
     |       +--> TotDeltaNormalizer
     |       +--> BooleanEventDetector / StateEventDetector
     |       +--> enqueue payload
@@ -38,6 +38,8 @@ main.py
 | Orquestador | `main.py` | Carga config, crea readers, cola, sender threads y scheduler |
 | Reader Rockwell | `workers/get_rockwell.py` | Conexion persistente, batch read, rotacion de conexion |
 | Reader Siemens | `workers/get_siemens.py` | Conexion OPC-UA, `get_values`, reconexion ante error |
+| Reader Simulator | `workers/get_simulator.py` | Valores fijos o aleatorios para pruebas locales |
+| Config | `common/config.py` | Carga YAML, resuelve includes y valida `product_type` |
 | Sender HTTP | `common/sender.py` | POST con `requests.Session`, pool y header `X-Api-Key` |
 | Spool/Replay | `storage/jsonl_buffer.py` | Persistencia por laguna, replay, migracion del buffer legacy |
 | Payload | `common/payload.py` | Modelo Pydantic del payload normalizado |
@@ -47,19 +49,33 @@ main.py
 ## Flujo por ciclo
 
 1. `load_plc_configs()` expande el master YAML y resuelve `include`.
-2. `run_one_plc()` crea el reader segun `source`.
-3. El reader hace `read_once()` y devuelve `tags`.
-4. Si viene `WM01_TOT_SCADA`, se agrega `WM01_TOT_DELTA_SCADA`.
-5. Se construye `NormalizedPayload` con timestamp UTC.
-6. Si hay `event_tags`, `BooleanEventDetector` genera `OPEN` y `CLOSE`.
-7. Si `enable_state_events=true`, `StateEventDetector` detecta cambios enteros `0..3`.
-8. El payload se encola segun la politica de cola.
-9. `sender_worker_loop()` intenta enviar:
+2. Cada PLC resuelve `product_type` (`crystal` o `small`) desde el override del include, el YAML incluido, el master o el default `crystal`.
+3. `run_one_plc()` crea el reader segun `source`.
+4. El reader hace `read_once()` y devuelve `tags`.
+5. Si viene `WM01_TOT_SCADA`, se agrega `WM01_TOT_DELTA_SCADA`.
+6. Se construye `NormalizedPayload` con timestamp UTC y `product_type`.
+7. Si hay `event_tags`, `BooleanEventDetector` genera `OPEN` y `CLOSE`.
+8. Si `enable_state_events=true`, `StateEventDetector` detecta cambios enteros `0..3`.
+9. El payload se encola segun la politica de cola.
+10. `sender_worker_loop()` intenta enviar:
    - HTTP directo
    - reintentos con backoff exponencial
    - spool si sigue fallando
-10. Si la cola queda vacia, el sender intenta reprocesar `data/spool/<lagoon>.jsonl`.
-11. El replay se hace en streaming y puede descartar payloads viejos segun `max_replay_payload_age_sec`.
+11. Si la cola queda vacia, el sender intenta reprocesar `data/spool/<lagoon>.jsonl`.
+12. El replay se hace en streaming y puede descartar payloads viejos segun `max_replay_payload_age_sec`.
+
+## Readers
+
+- `rockwell`: `RockwellSessionReader`
+- `siemens`: `SiemensSessionReader`
+- `simulator`: `SimulatedTagReader`
+
+`simulator` acepta valores fijos en `tags` o specs en `simulator.tags`:
+
+- `float`: `min`, `max`, `decimals`, `step`
+- `int`: `min`, `max`, `step`
+- `bool`: `initial`, `change_probability`
+- `choice`/`state`: `values`, `change_probability`
 
 ## Modelo de concurrencia
 
@@ -130,6 +146,19 @@ Semantica:
 - `config/central_hub_dubai.yml`
 - `config/kirah.yml`
 - `config/ary.yml`
+- `config/nyah.yml`
+- `config/small_sim.yml`
+
+El master puede mezclar productos en un solo proceso:
+
+```yaml
+product_type: "crystal"
+
+plcs:
+  - include: "config/lagoon_aquavista.yml"
+  - include: "config/small_sim.yml"
+    product_type: "small"
+```
 
 ## Deuda tecnica
 
