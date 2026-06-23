@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 setlocal ENABLEEXTENSIONS ENABLEDELAYEDEXPANSION
 
 REM ==========================================
@@ -18,7 +18,6 @@ REM Activar entorno virtual
 call "%BASE_DIR%.venv\Scripts\activate.bat"
 if errorlevel 1 (
     echo ERROR: No se pudo activar el entorno virtual
-    pause
     exit /b 1
 )
 
@@ -28,7 +27,6 @@ set CONFIG_FILE=%BASE_DIR%collectors.yml
 if not exist "%CONFIG_FILE%" (
     echo ERROR: No se encontro el archivo:
     echo   %CONFIG_FILE%
-    pause
     exit /b 1
 )
 
@@ -63,4 +61,3 @@ if NOT "%EXIT_CODE%"=="0" (
 
 echo.
 echo Proceso finalizado.
-pause

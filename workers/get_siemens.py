@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Callable
 
 from common.logger import get_logger
 from opcua import Client
@@ -68,11 +68,64 @@ class SiemensSessionReader:
         try:
             raw_values = self.client.get_values(self._nodes_in_order)
             return {tag_id: value for tag_id, value in zip(self._tag_ids, raw_values)}
-        except UaError as exc:
-            logger.warning("Siemens read failed endpoint=%s err=%s", self.endpoint, exc)
+        except UaError:
             self.disconnect()
             return {}
-        except Exception as exc:
-            logger.error("Siemens read crashed endpoint=%s err=%s", self.endpoint, exc)
+        except Exception:
             self.disconnect()
             return {}
+
+
+SiemensReaderFactory = Callable[..., SiemensSessionReader]
+
+
+class SiemensModulesReader:
+    def __init__(
+        self,
+        modules: list[dict[str, Any]],
+        *,
+        supplemental_tags: dict[str, Any] | None = None,
+        reader_factory: SiemensReaderFactory = SiemensSessionReader,
+    ) -> None:
+        self.supplemental_tags = dict(supplemental_tags or {})
+        self._readers: list[tuple[SiemensSessionReader, tuple[str, ...]]] = []
+
+        for module in modules:
+            driver = str(module.get("driver") or "siemens").strip().lower()
+            if driver not in {"siemens", "opcua"}:
+                raise ValueError(f"Unsupported OPC UA module driver: {driver!r}")
+
+            tag_map = module.get("tags") or {}
+            if not isinstance(tag_map, dict) or not tag_map:
+                continue
+
+            endpoint = str(module.get("opc_server_url") or "").strip()
+            if not endpoint:
+                ip = str(module.get("ip") or "").strip()
+                endpoint = f"opc.tcp://{ip}:4840" if ip else ""
+            if not endpoint:
+                raise ValueError("Siemens OPC UA module endpoint is required")
+
+            reader = reader_factory(
+                endpoint=endpoint,
+                tag_map=tag_map,
+                timeout_sec=float(module.get("timeout_sec", 4)),
+                username=module.get("username"),
+                password=module.get("password"),
+            )
+            self._readers.append((reader, tuple(tag_map)))
+
+    def read_once(self) -> dict[str, Any]:
+        values = dict(self.supplemental_tags)
+        for reader, tag_ids in self._readers:
+            try:
+                module_values = reader.read_once()
+            except Exception:
+                module_values = {}
+
+            if module_values:
+                values.update(module_values)
+            else:
+                values.update({tag_id: None for tag_id in tag_ids})
+
+        return values

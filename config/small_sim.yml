@@ -1,16 +1,53 @@
 lagoon_id: "small_sim"
 product_type: "small"
-source: simulator
+source: siemens
 poll_seconds: 1
 timezone: "America/Santiago"
 
 backend:
   url: "http://127.0.0.1:8090/ingest/scada"
 
-tags:
-  "PT-123": 1.4
-  "AE-100": 650
-  "AE-022": 7.2
-  TEMP: 28.4
-  ORP: 650
-  Dosif: 1.25
+simulator:
+  tags:
+    "PT-123": 1.4
+    "AE-100": 650
+    "AE-022": 7.2
+    TEMP: 28.4
+    ORP: 650
+    Dosif: 1.25
+
+opcua_modules:
+  - id: "recirculation_pump"
+    driver: "siemens"
+    ip: "192.168.100.10"
+    opc_server_url: "opc.tcp://192.168.100.10:4840"
+    timeout_sec: 4
+    pulse_seconds: 0.25
+    actions:
+      partir: "TAGS_01_BOOL"
+      parar: "TAGS_02_BOOL"
+    write_commands:
+      set_tags_02_int:
+        tag: "TAGS_02_INT"
+        data_type: "int16"
+        min: 0
+        max: 100
+      set_tags_03_int:
+        tag: "TAGS_03_INT"
+        data_type: "int16"
+        min: 0
+        max: 100
+      set_tags_04_int:
+        tag: "TAGS_04_INT"
+        data_type: "int16"
+        min: 0
+        max: 100
+    state_tag: "TAGS_03_BOOL"
+    tags:
+      TAGS_01_BOOL: "ns=4;i=23"
+      TAGS_02_BOOL: "ns=4;i=24"
+      TAGS_03_BOOL: "ns=4;i=25"
+      TAGS_01_INT: "ns=4;i=13"
+      TAGS_02_INT: "ns=4;i=14"
+      TAGS_03_INT: "ns=4;i=15"
+      TAGS_04_INT: "ns=4;i=16"

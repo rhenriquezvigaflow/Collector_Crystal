@@ -9,6 +9,20 @@ from queue import Empty, Full, Queue
 from typing import Any, Dict
 from zoneinfo import ZoneInfo
 
+for noisy_logger_name in (
+    "opcua",
+    "opcua.client",
+    "opcua.client.ua_client",
+    "opcua.uaprotocol",
+    "pycomm3",
+    "urllib3",
+):
+    noisy_logger = logging.getLogger(noisy_logger_name)
+    noisy_logger.handlers.clear()
+    noisy_logger.addHandler(logging.NullHandler())
+    noisy_logger.propagate = False
+    noisy_logger.setLevel(logging.CRITICAL + 1)
+
 from dotenv import load_dotenv
 
 from common.config import load_plc_configs, resolve_product_type
@@ -19,14 +33,10 @@ from common.time import utc_now
 from normalizer.tot_delta_normalizer import TotDeltaNormalizer
 from storage import jsonl_buffer
 from workers.get_rockwell import RockwellSessionReader
-from workers.get_siemens import SiemensSessionReader
+from workers.get_siemens import SiemensModulesReader, SiemensSessionReader
 from workers.get_simulator import SimulatedTagReader
 
 load_dotenv()
-
-logging.getLogger("opcua").setLevel(logging.WARNING)
-logging.getLogger("pycomm3").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 logger = get_logger()
 
@@ -313,20 +323,15 @@ def sender_worker_loop(
 
     while True:
         if send_queue.qsize() == 0:
-            replayed, pending_spool, dropped_spool = replay_spool(
-                lagoon_id=lagoon_id,
-                sender=sender,
-                replay_batch_size=replay_batch_size,
-                max_replay_payload_age_sec=max_replay_payload_age_sec,
-            )
-            if replayed or dropped_spool:
-                logger.info(
-                    "[SPOOL REPLAY] lagoon=%s replayed=%s pending=%s dropped=%s",
-                    lagoon_id,
-                    replayed,
-                    pending_spool,
-                    dropped_spool,
+            try:
+                replay_spool(
+                    lagoon_id=lagoon_id,
+                    sender=sender,
+                    replay_batch_size=replay_batch_size,
+                    max_replay_payload_age_sec=max_replay_payload_age_sec,
                 )
+            except Exception:
+                pass
 
         try:
             payload = send_queue.get(timeout=1.0)
@@ -347,13 +352,8 @@ def sender_worker_loop(
                 failed += 1
                 if spool_on_fail:
                     spool_payload(payload)
-        except Exception as exc:
+        except Exception:
             failed += 1
-            logger.error(
-                "[SENDER ERROR] lagoon=%s err=%s",
-                lagoon_id,
-                exc,
-            )
             if spool_on_fail:
                 spool_payload(payload)
         finally:
@@ -466,14 +466,22 @@ def run_one_plc(cfg: dict, root_cfg: dict):
             timeout_sec=float(rockwell_cfg.get("timeout_sec", 5.0)),
         )
     elif source == "siemens":
-        siemens_cfg = cfg["siemens"]
-        reader = SiemensSessionReader(
-            endpoint=siemens_cfg["opc_server_url"],
-            tag_map=cfg["tags"],
-            timeout_sec=float(siemens_cfg.get("timeout_sec", 4)),
-            username=siemens_cfg.get("username"),
-            password=siemens_cfg.get("password"),
-        )
+        opcua_modules = cfg.get("opcua_modules") or []
+        if opcua_modules:
+            simulator_cfg = cfg.get("simulator") or {}
+            reader = SiemensModulesReader(
+                modules=opcua_modules,
+                supplemental_tags=simulator_cfg.get("tags") or {},
+            )
+        else:
+            siemens_cfg = cfg["siemens"]
+            reader = SiemensSessionReader(
+                endpoint=siemens_cfg["opc_server_url"],
+                tag_map=cfg["tags"],
+                timeout_sec=float(siemens_cfg.get("timeout_sec", 4)),
+                username=siemens_cfg.get("username"),
+                password=siemens_cfg.get("password"),
+            )
     elif source == "simulator":
         simulator_cfg = cfg.get("simulator") or {}
         reader = SimulatedTagReader(
@@ -513,8 +521,8 @@ def run_one_plc(cfg: dict, root_cfg: dict):
         try:
             raw_tags = reader.read_once()
             tags = dict(raw_tags or {})
-        except Exception as exc:
-            logger.error("[COLLECTOR READ ERROR] lagoon=%s source=%s err=%s", lagoon_id, source, exc)
+        except Exception:
+            tags = {}
 
         if tags:
             if TOT_TAG in tags:
@@ -558,10 +566,6 @@ def run_one_plc(cfg: dict, root_cfg: dict):
                     dropped_count += 1
                     if spool_on_send_fail:
                         spool_payload(payload)
-        else:
-            if log_every_n_cycles > 0 and cycle_count % log_every_n_cycles == 0:
-                logger.warning("[COLLECTOR EMPTY] lagoon=%s source=%s", lagoon_id, source)
-
         if log_every_n_cycles > 0 and cycle_count % log_every_n_cycles == 0:
             elapsed = time.perf_counter() - cycle_start
             queue_depth = send_queue.qsize() if send_queue else 0

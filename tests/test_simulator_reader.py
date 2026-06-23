@@ -23,6 +23,5 @@ class SimulatedTagReaderTests(unittest.TestCase):
         self.assertIn(values["STATE"], [0, 1])
         self.assertIn(values["MODE"], ["AUTO", "MANUAL"])
 
-
 if __name__ == "__main__":
     unittest.main()

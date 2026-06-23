@@ -109,16 +109,14 @@ class RockwellSessionReader:
             self._consecutive_fails = 0
             return values
 
-        except CommError as e:
+        except CommError:
             self._consecutive_fails += 1
-            logger.error("Rockwell read failed ip=%s err=%s", self.ip, e)
             if self._consecutive_fails >= self.max_consecutive_fails:
                 self._disconnect()
             return {}
 
-        except Exception as e:
+        except Exception:
             self._consecutive_fails += 1
-            logger.exception("Rockwell read crashed ip=%s err=%s", self.ip, e)
             if self._consecutive_fails >= self.max_consecutive_fails:
                 self._disconnect()
             return {}
