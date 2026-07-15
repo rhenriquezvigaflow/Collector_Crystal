@@ -1,0 +1,42 @@
+lagoon_id: "laguna_baia_kristal"
+product_type: "crystal"
+source: rockwell
+poll_seconds: 1
+
+force_reconnect_every_sec: 3600
+max_consecutive_fails: 10
+
+timezone: "America/Bogota"
+
+backend:
+  url: "http://127.0.0.1:8090/ingest/scada"
+
+rockwell:
+  ip: "192.168.14.10"
+  slot: 0
+  timeout_sec: 5
+
+tags:
+  # La clave izquierda es el tag logico publicado; la derecha es la direccion Rockwell.
+  PT112_R: "PT112_R"
+  PT114_R: "PT114_R"
+  PT116_R: "PT116_R"
+  FIT002_R: "FIT002_R"
+  BACKWASH.DIFF_PRES: "BACKWASH.DIFF_PRES"
+  P005_STS: "P005_ST"
+  P006_STS: "P006_ST"
+  P009_STS: "P009_ST"
+  P007_STS: "P007_ST"
+  P008_STS: "P008_ST"
+  VE237_STS: "VE237_ST"
+  VE238_STS: "VE238_ST"
+  VE239_STS: "VE239_ST"
+  VE240_STS: "VE240_ST"
+  VE244_STS: "VE244_ST"
+  VE401_STS: "VE401_ST"
+  VE402_STS: "VE402_ST"
+  LSL001.ESTADO: "LSL001.ESTADO"
+  LSH002.ESTADO: "LSH002.ESTADO"
+  LSL004.ESTADO: "LSL004.ESTADO"
+  LSM005.ESTADO: "LSM006.ESTADO"
+  LSH006.ESTADO: "LSH005.ESTADO"

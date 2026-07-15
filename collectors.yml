@@ -1,7 +1,5 @@
 backend:
   url: "http://127.0.0.1:8090/ingest/scada"
-  # Let the backend's 12 s hard timeout fire before the client gives up.
-  # Retrying earlier can overlap requests that are still being processed.
   timeout_sec: 15
   pool_connections: 1
   pool_maxsize: 1
@@ -9,14 +7,12 @@ backend:
 product_type: "crystal"
 
 runtime:
-  # Live telemetry is latest-value data: keep only the freshest pending sample.
+
   send_queue_maxsize: 1
   send_queue_full_policy: "drop_oldest"
   spool_on_send_fail: true
   replay_spool_batch_size: 1
   max_replay_payload_age_sec: 8
-  # The next polling cycle supplies a fresh sample; do not duplicate a timed-out
-  # request while the backend may still be completing it.
   send_retry_attempts: 0
   send_retry_backoff_base_sec: 1
   send_retry_backoff_max_sec: 8
@@ -25,10 +21,12 @@ runtime:
 plcs:
   - include: "config/lagoon_aquavista.yml"
   - include: "config/lagoon_costadellago.yml"
+  - include: "config/laguna_baia_kristal.yml"
   - include: "config/Ava_lagoons.yml"
   - include: "config/santa_rosalia.yml"
   - include: "config/central_hub_dubai.yml"
   - include: "config/laguna_central_district.yml"
+  - include: "config/laguna_mountain_view.yml"
   - include: "config/kirah.yml"
   - include: "config/ary.yml"
   - include: "config/nyah.yml"
