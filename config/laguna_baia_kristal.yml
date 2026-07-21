@@ -14,7 +14,7 @@ backend:
 rockwell:
   ip: "192.168.14.10"
   slot: 0
-  timeout_sec: 5
+  timeout_sec: 1
 
 tags:
   # La clave izquierda es el tag logico publicado; la derecha es la direccion Rockwell.
