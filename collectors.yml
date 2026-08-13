@@ -1,4 +1,4 @@
-backend:
+﻿backend:
   url: "http://127.0.0.1:8090/ingest/scada"
   timeout_sec: 15
   pool_connections: 1
@@ -19,7 +19,6 @@ runtime:
   startup_jitter_max_sec: 1
 
 plcs:
-  - include: "config/lagoon_aquavista.yml"
   - include: "config/lagoon_costadellago.yml"
   - include: "config/laguna_baia_kristal.yml"
   - include: "config/Ava_lagoons.yml"
@@ -30,5 +29,7 @@ plcs:
   - include: "config/kirah.yml"
   - include: "config/ary.yml"
   - include: "config/nyah.yml"
+  - include: "config/laguna_karibao.yml"
+  - include: "config/laguna_aquaterra.yml"
   - include: "config/small_sim.yml"
     product_type: "small"

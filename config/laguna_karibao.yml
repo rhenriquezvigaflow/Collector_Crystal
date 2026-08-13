@@ -1,0 +1,30 @@
+﻿lagoon_id: "laguna_karibao"
+product_type: "crystal"
+source: rockwell
+poll_seconds: 1
+timezone: "America/Guayaquil"
+
+backend:
+  url: "http://127.0.0.1:8090/ingest/scada"
+  timeout_sec: 5
+
+rockwell:
+  ip: "192.168.8.10"
+  timeout_sec: 5
+
+tags:
+  PT117_R_SCADA: "PT117_R_SCADA"
+  PT120_R_SCADA: "PT120_R_SCADA"
+  PT122_R_SCADA: "PT122_R_SCADA"
+  WM01_TOT: "WM01_TOT"
+  BACKWASH.DIFF_PRES: "BACKWASH.DIFF_PRES"
+  P002_STS_SCADA: "P002_STS_SCADA"
+  P006_STS_SCADA: "P006_STS_SCADA"
+  P007_STS_SCADA: "P007_STS_SCADA"
+  P017_STS_SCADA: "P017_STS_SCADA"
+
+event_tags:
+  P002_STS_SCADA: "ESTADO BOMBA RETROLAVADO"
+  P006_STS_SCADA: "ESTADO BOMBA FILTRACION"
+  P007_STS_SCADA: "ESTADO BOMBA RETORNO CLARIFICADO"
+  P017_STS_SCADA: "ESTADO BOMBA CL-FLO12"
