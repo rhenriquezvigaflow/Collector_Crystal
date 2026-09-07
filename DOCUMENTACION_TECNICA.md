@@ -213,7 +213,6 @@ Comportamiento:
 ## Limitaciones conocidas
 
 - no existe proceso externo dedicado a replay
-- `pg_writer` no forma parte del flujo activo
 - el collector no hace deduplicacion de payloads: si el PLC envia cambio, el backend decide persistencia/eventos
 
 ## Referencias

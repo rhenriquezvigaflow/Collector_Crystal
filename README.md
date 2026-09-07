@@ -285,7 +285,6 @@ Mensajes relevantes:
 
 ## Limitaciones conocidas
 
-- `storage/pg_writer.py` sigue sin uso productivo.
 - El spool es JSONL local; no hay servicio separado de replay externo.
 - El replay es streaming: no carga el spool completo en memoria antes de reprocesarlo.
 - La precision del scheduler depende del host y del tiempo de lectura del PLC.

@@ -163,4 +163,3 @@ plcs:
 ## Deuda tecnica
 
 - No hay pipeline separado para drenar spool desde otro proceso.
-- `storage/pg_writer.py` no participa del flujo productivo actual.

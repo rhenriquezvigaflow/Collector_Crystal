@@ -15,6 +15,18 @@ rockwell:
 # El collector lee estas mismas claves lógicas. Los controles sólo las
 # referencian; ninguna dirección Rockwell queda definida en el backend.
 tags:
+  SEL_MAN_P300: "SEL_MAN_P300"
+  SEL_MAN_P410: "SEL_MAN_P410"
+  SEL_MAN_P420: "SEL_MAN_P420"
+  SEL_MAN_P430: "SEL_MAN_P430"
+  EN_MANUAL_P300: "EN_MANUAL_P300"
+  EN_AUTO_P300: "EN_AUTO_P300"
+  EN_MANUAL_P410: "EN_MANUAL_P410"
+  EN_AUTO_P410: "EN_AUTO_P410"
+  EN_MANUAL_P420: "EN_MANUAL_P420"
+  EN_AUTO_P420: "EN_AUTO_P420"
+  EN_MANUAL_P430: "EN_MANUAL_P430"
+  EN_AUTO_P430: "EN_AUTO_P430"
   Partir: "Partir"
   Motor: "Motor"
   CONTADOR: "CONTADOR"
@@ -31,6 +43,25 @@ control_modules:
         tag: "Partir"
         mode: "set"
         value: false
+    write_commands:
+      set_manual_mode:
+        tag: "SEL_MAN_P300"
+        data_type: "bool"
+  - id: "pump_p410"
+    write_commands:
+      set_manual_mode:
+        tag: "SEL_MAN_P410"
+        data_type: "bool"
+  - id: "pump_p420"
+    write_commands:
+      set_manual_mode:
+        tag: "SEL_MAN_P420"
+        data_type: "bool"
+  - id: "pump_p430"
+    write_commands:
+      set_manual_mode:
+        tag: "SEL_MAN_P430"
+        data_type: "bool"
   - id: "dosif001"
     write_commands:
       set_contador:
