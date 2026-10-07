@@ -1,0 +1,69 @@
+lagoon_id: "d11_pacerla_j"
+product_type: "crystal"
+source: rockwell
+poll_seconds: 1
+timezone: "Asia/Dubai"
+
+backend:
+  url: "http://127.0.0.1:8090/ingest/scada"
+  timeout_sec: 5
+  send_events: true
+
+rockwell:
+  ip: "192.168.30.10"
+  slot: 0
+  timeout_sec: 5
+
+tags:
+  PT203_R: "PT203_R"
+  PT401_R: "PT401_R"
+  PT403_R: "PT403_R"
+  FIT002_R: "FIT002_R"
+  WM01_TOT: "WM01_TOT"
+  BACKWASH.DIFF_PRES: "BACKWASH.DIFF_PRES"
+  P200_ST: "P200_ST"
+  P500_ST: "P500_ST"
+  MP110_ST: "MP110_ST"
+  MP310_ST: "MP310_ST"
+  MP300_ST: "MP300_ST"
+  VE400_ST: "VE400_ST"
+  VE401_ST: "VE401_ST"
+  VE402_ST: "VE402_ST"
+  VE403_ST: "VE403_ST"
+  VE404_ST: "VE404_ST"
+  VE203_ST: "VE203_ST"
+  VE204_ST: "VE204_ST"
+  P100_ST: "P100_ST"
+  LF01_ST: "LF01_ST"
+  PT101_R: "PT101_R"
+  PT102_R: "PT102_R"
+  FIT100_R: "FIT100_R"
+  TE100_R: "TE100_R"
+  TH101_R: "TH101_R"
+  P100_FREQ: "P100_FREQ"
+  P110_ST: "P110_ST"
+  LF02_ST: "LF02_ST"
+  PT111_R: "PT111_R"
+  PT112_R: "PT112_R"
+  FIT110_R: "FIT110_R"
+  TE110_R: "TE110_R"
+  TH111_R: "TH111_R"
+  P110_FREQ: "P110_FREQ"
+
+event_tags:
+  P200_ST: "P-200"
+  P500_ST: "P-500"
+  MP110_ST: "MP-110"
+  MP310_ST: "MP-310"
+  MP300_ST: "MP-300"
+  VE400_ST: "VX-400"
+  VE401_ST: "VX-401"
+  VE402_ST: "VX-402"
+  VE403_ST: "VX-403"
+  VE404_ST: "VX-404"
+  VE203_ST: "VX-203"
+  VE204_ST: "VX-204"
+  P100_ST: "P-100"
+  LF01_ST: "Limpieza fondo 01"
+  P110_ST: "P-110"
+  LF02_ST: "Limpieza fondo 02"
